@@ -275,12 +275,13 @@ static void goJail() {
     ph = P_ENDTURN;
 }
 
-static void moveBy(int n) {
+// Passing GO pays $200; landing on it with the dice, payday: $400.
+static void moveBy(int n, bool dice = false) {
     Player &me = st.pl[st.cur];
     uint8_t from = me.pos;
     me.pos = (uint8_t)((from + n + TILES) % TILES);
     push(EV_MOVE, st.cur, from, me.pos, n);
-    if (n > 0 && me.pos < from) pay(BANK, st.cur, 200, R_GO);
+    if (n > 0 && me.pos < from) pay(BANK, st.cur, dice && !me.pos ? 400 : 200, R_GO);
     ph = P_RESOLVE;
 }
 
@@ -597,7 +598,7 @@ void update(bool stageBusy) {
     switch (ph) {
         case P_TURN:    beginTurn(); break;
         case P_PREROLL: if (isCpu(st.cur)) cpuPreroll(); break;
-        case P_MOVE:    moveBy(steps); break;
+        case P_MOVE:    moveBy(steps, true); break;
         case P_RESOLVE: resolve(); break;
         case P_OFFER:   if (isCpu(st.cur)) cpuOffer(); break;
         case P_CARD:    applyCard(); break;

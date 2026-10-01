@@ -16,8 +16,10 @@ one player against the CPU, or two on one handheld, and over in minutes.
 | The auction | Building | Go to jail |
 |---|---|---|
 | ![auction](docs/auction.gif) | ![build](docs/build.gif) | ![jail](docs/jail.gif) |
-| **Title** | **Bankrupt** | |
-| ![title](docs/title.gif) | ![bankrupt](docs/bankrupt.gif) | |
+| **A set made** | **Payday** | **Bankrupt** |
+| ![set](docs/setcall.gif) | ![payday](docs/payday.gif) | ![bankrupt](docs/bankrupt.gif) |
+| **Title** | **The story of the game** | |
+| ![title](docs/title.gif) | ![result](docs/story.png) | |
 
 (Captured from the PC simulator in `tools/chsim`, which runs the real game
 and graphics code and renders what the device shows.)
@@ -49,7 +51,7 @@ A CPU's turn goes by quickly: the show is for your own.
 
 | Button | |
 |---|---|
-| LEFT / RIGHT, A | choose a button on the bar at the foot of the screen: ROLL, MANAGE, BUY, AUCTION, and in jail PAY $50 or CARD |
+| LEFT / RIGHT, A | choose a button on the bar at the foot of the screen: ROLL, MANAGE (BUILD when there is a house to be had), BUY, AUCTION, and in jail PAY $50 or CARD |
 | SELECT | the map: the whole board from above, who owns what, everyone's cash and net worth |
 | START | pause: resume, options, save + quit |
 | A | answers a card or a PRESS A |
@@ -58,15 +60,17 @@ A CPU's turn goes by quickly: the show is for your own.
 
 * Everyone starts with $1500 and a few deeds, dealt free: four each with
   two players, two each with more.
-* Roll, move, collect $200 passing GO. Doubles roll again; three running go
+* Roll, move, collect $200 passing GO - and **payday**, $400, landing on it
+  with the dice. Doubles roll again; three running go
   to jail. In jail, pay $50, play a card, or roll for doubles (the third
   miss pays and moves).
 * Land on an unowned deed and BUY it at its price, or send it to AUCTION.
   Land on someone's and pay the rent on its card; a full colour set doubles
   the bare rent, railroads pay by how many, utilities by the dice.
 * Hold **most of a colour group** - two of its three streets, or both of a
-  pair - and MANAGE builds houses on what you hold, evenly, and a hotel
-  after four. (With no trading and only two at the table, full sets would
+  pair - and BUILD houses on what you hold, evenly, and a hotel after
+  four. The table hears about it: CAN BUILD! when a deed gives you most of
+  a group, FULL SET! when it gives you all of it. (With no trading and only two at the table, full sets would
   be rare; this way the houses come.)
 * **There is no trading. There are auctions.** A deed the lander turns down
   starts at nothing: the first tap leads at $0 and each tap after raises
@@ -81,14 +85,17 @@ A CPU's turn goes by quickly: the show is for your own.
 * A debt you cannot pay is settled for you: houses go back at half price,
   then your deeds go to auction, strays first. If that is still not
   enough, you are bankrupt.
-* **The jackpot:** taxes, fines and bail pile up on Free Parking, and go to
-  whoever lands there.
+* **The jackpot:** taxes, fines and bail pile up on Free Parking - the pot
+  floats over its corner - and go to whoever lands there.
 * The game ends at the **first bankruptcy**, or at **closing time** (10 to
   60 rounds, set at the table; 20 to begin with). The richest player left -
-  cash, deeds at their price, buildings at cost - wins.
+  cash, deeds at their price, buildings at cost - wins, and the result
+  draws everyone's worth round by round: the story of the game.
 
 MANAGE: LEFT / RIGHT walk your deeds, UP builds a house, DOWN sells one back
-at half price, A auctions the deed, B goes back.
+at half price, A auctions the deed, B goes back. BUILD opens it on a street
+you can build on, and each UP moves along the set, so UP, UP, UP builds it
+up evenly.
 
 Options: sound, and the pace (FUN, or QUICK: faster turns, no zooming in on
 landings). Options, the house's records and a game in progress (SAVE + QUIT,
@@ -132,7 +139,9 @@ C++ compiler (zig, clang++ or g++ on the PATH, `pip install ziglang`, or
   debug commands: `G` a new game, `D` the next dice, `A` the next card,
   `$`, `E` and `T` to set cash, deeds and tokens (the list is in
   `src/states/Screens.cpp`). `cal` and `perf` estimate the device's render
-  time.
+  time. `pop.txt` plays the big moments (a set made, BUILD, a hotel, payday,
+  the jackpot, a hotel's rent) and `story.txt` an all-CPU game to its
+  result graph.
 * `python tools/device.py upload [--debug]` - build and upload (`--debug`
   adds the serial protocol for screenshots, injected input and lockstep).
 * **Editing the art:** `python tools/sheet.py export` writes

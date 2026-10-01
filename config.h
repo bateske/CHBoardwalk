@@ -20,11 +20,15 @@
 #endif
 #endif
 
-// A build that leaves out saving and the options screen (about 2 KB), should
-// a device debug build - which carries the ~2 KB protocol - ever stop
-// fitting. Today both fit with everything in.
+// A build that leaves out saving and the options screen (about 2 KB). On
+// for device debug builds, which carry the ~2 KB protocol and no longer fit
+// beside everything; release builds and the simulator have it all.
 #ifndef CHBW_LEAN
+#if CHBW_DEBUG && !defined(CHSIM)
+#define CHBW_LEAN        1
+#else
 #define CHBW_LEAN        0
+#endif
 #endif
 
 // Section profiler (dbg::prof + the T command). Opt-in: costs flash.

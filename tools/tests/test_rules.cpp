@@ -142,6 +142,14 @@ static void testMoveAndGo() {
     const Event *go = nullptr;
     for (auto &e : evlog) if (e.type == EV_PAY && e.c == R_GO) go = &e;
     CHECK(go && go->amount == 200 && go->b == 1);
+    // Landing on GO with the dice: payday, $400 (a card to GO pays $200, testCards).
+    run();
+    fresh();
+    st.pl[0].pos = 36;
+    evlog.clear();
+    throwDice(1, 3);
+    CHECK_EQ(st.pl[0].pos, 0);
+    CHECK(last(EV_PAY) && last(EV_PAY)->c == R_GO && last(EV_PAY)->amount == 400);
 }
 
 static void testRent() {

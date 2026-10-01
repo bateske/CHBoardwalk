@@ -47,6 +47,19 @@ static bool managing;                // the manage view: the glove on your deeds
 static uint8_t mTile;
 static uint8_t barSel;
 
+// Each player's net worth as each round began ($10s), for the result's
+// graph: the story of the game. (A continued game's story starts there.)
+static const uint8_t HIST = 64;
+static int16_t hist[SEATS][HIST];
+static uint8_t nHist;
+static uint16_t histRound;
+
+static void record() {
+    if (nHist == HIST) return;
+    for (uint8_t p = 0; p < st.players; p++) hist[p][nHist] = (int16_t)(netWorth(p) / 10);
+    nHist++;
+}
+
 // ---------------------------------------------------------------------------
 // Flow
 // ---------------------------------------------------------------------------
@@ -83,6 +96,8 @@ static void enter(Scr s) {
         overlay = NONE;
         statsCounted = managing = false;
         stage::manage(-1);
+        nHist = 0;
+        histRound = 0;
     }
 }
 
@@ -281,9 +296,19 @@ static void setupRender(uint32_t frame) {
 // ---------------------------------------------------------------------------
 // Play: the action bar
 // ---------------------------------------------------------------------------
-enum Btn : uint8_t { B_ROLL, B_PAY, B_CARD, B_MANAGE, B_BUY, B_AUCTION };
-static const char *const BTN[6] = {"ROLL", "PAY $50", "CARD", "MANAGE", "BUY", "AUCTION"};
-static const uint8_t BTN_COLOUR[6] = {FELT_LT, GOLD, CYAN, BLUE, FELT_LT, RED};
+enum Btn : uint8_t { B_ROLL, B_PAY, B_CARD, B_MANAGE, B_BUY, B_AUCTION, B_BUILD };
+static const char *const BTN[7] = {"ROLL", "PAY $50", "CARD", "MANAGE", "BUY", "AUCTION", "BUILD"};
+static const uint8_t BTN_COLOUR[7] = {FELT_LT, GOLD, CYAN, BLUE, FELT_LT, RED, GOLD};
+
+// Where the player at the turn could build next (from tile `from`, in
+// board order; the same group only, if `g` is one), else -1.
+static int buildable(uint8_t from, uint8_t g = 0xFF) {
+    for (uint8_t i = 0; i < board::TILES; i++) {
+        uint8_t t = (uint8_t)((from + i) % board::TILES);
+        if (canBuild(t) && (g == 0xFF || board::group(t) == g)) return t;
+    }
+    return -1;
+}
 static uint8_t btn[4], nBtn;
 
 // The buttons the player at the turn has: on an unowned deed, or before
@@ -295,6 +320,9 @@ static void barFor(bool offer, uint8_t also = 0xFF) {
     btn[nBtn++] = B_ROLL;
     if (me.jail || also == B_PAY) btn[nBtn++] = B_PAY;
     if (me.jail ? (me.flags & (F_CARD | F_CARD << 1)) != 0 : also == B_CARD) btn[nBtn++] = B_CARD;
+    // Your deeds: BUILD when there is a house to be had, else MANAGE (the
+    // same view, starting on a tile you can build on).
+    if (buildable(0) >= 0 || also == B_BUILD) { btn[nBtn++] = B_BUILD; return; }
     for (uint8_t i = 0; i < board::TILES; i++)
         if (owner(i) == st.cur) { btn[nBtn++] = B_MANAGE; break; }
 }
@@ -344,7 +372,15 @@ static void manageStep(int d) {
 static void manageInput() {
     if (arduboy.repeat(LEFT_BUTTON)) { manageStep(-1); audio::sfx(Sfx::Cursor); }
     if (arduboy.repeat(RIGHT_BUTTON)) { manageStep(1); audio::sfx(Sfx::Cursor); }
-    if (arduboy.justPressed(UP_BUTTON) && !build(mTile)) audio::sfx(Sfx::Deny);
+    if (arduboy.justPressed(UP_BUTTON)) {
+        uint8_t g = board::group(mTile);
+        if (!build(mTile)) audio::sfx(Sfx::Deny);
+        else if (!canBuild(mTile)) {
+            // Built evenly, so on to the next of the set: UP, UP, UP builds it up.
+            int k = buildable(mTile, g);
+            if (k >= 0) { mTile = (uint8_t)k; stage::manage(k); }
+        }
+    }
     if (arduboy.justPressed(DOWN_BUTTON) && !sell(mTile)) audio::sfx(Sfx::Deny);
     if (arduboy.justPressed(A_BUTTON)) {
         if (canOffer(mTile)) { overlay = CONFIRM; audio::sfx(Sfx::Select); }
@@ -365,9 +401,10 @@ static void barInput() {
         case B_CARD:    ok = useJailCard(); break;
         case B_BUY:     ok = buy(); break;
         case B_AUCTION: ok = decline(); break;
-        case B_MANAGE:
+        case B_MANAGE: case B_BUILD:
             managing = true;
             mTile = st.pl[st.cur].pos;
+            if (buildable(mTile) >= 0) mTile = (uint8_t)buildable(mTile);
             if (owner(mTile) != st.cur) manageStep(1); else stage::manage(mTile);
             break;
     }
@@ -455,7 +492,7 @@ static void playUpdate() {
     showBar = false;
     if (overlay == NONE || overlay == CONFIRM) {
         if (pick) {
-            static const uint8_t ACT_BTN[6] = {B_ROLL, B_PAY, B_CARD, B_BUY, B_AUCTION, B_MANAGE};
+            static const uint8_t ACT_BTN[6] = {B_ROLL, B_PAY, B_CARD, B_BUY, B_AUCTION, B_BUILD};
             pressed = ACT_BTN[pick - 1];
             barFor(pressed == B_BUY || pressed == B_AUCTION, pressed);
             showBar = true;
@@ -465,10 +502,12 @@ static void playUpdate() {
         }
     }
     stage::setBar(showBar || managing);
+    if (st.round != histRound && active()) { histRound = st.round; record(); }
     game::update(stage::busy());
     stage::update();
     if (phase() == P_OVER && stage::overShown() && overlay != RESULT) {
         countResult();
+        record();
         overlay = RESULT;
         t = 0;
     }
@@ -510,22 +549,41 @@ static void drawResult(uint32_t frame) {
             if (order[j] == st.winner || (order[i] != st.winner && worth[order[j]] > worth[order[i]])) {
                 uint8_t s = order[i]; order[i] = order[j]; order[j] = s;
             }
-    panel(16, 96);
-    centred2(20, st.over == BY_CLOSING + 1 ? "CLOSING TIME" : "BANKRUPT!", FX_B);
+    panel(14, 100);
+    centred2(18, st.over == BY_CLOSING + 1 ? "CLOSING TIME" : "BANKRUPT!", FX_B);
     int grow = fx::ease(fx::OUT_CUBIC, t > 60 ? 60 : t, 60);
     for (uint8_t i = 0; i < n; i++) {
         uint8_t p = order[i];
-        int y = 38 + i * 15;
-        gfx_fillRect(20, y + 1, 5, 5, stage::SEAT_COLOUR[p]);
+        int y = 31 + i * 9;
+        gfx_fillRect(20, y, 5, 5, stage::SEAT_COLOUR[p]);
         buf[0] = 'P'; buf[1] = (char)('1' + p); buf[2] = 0;
-        text35(28, y + 1, buf, i ? WHITE : FX_B);
-        if (worth[p] < 0) { text35(40, y + 1, "BUST", RED); continue; }
-        int w = (int)(worth[p] * 66 / top * grow >> 8);
-        gfx_fillRect(40, y, w, 7, stage::SEAT_COLOUR[p]);
+        text35(28, y, buf, i ? WHITE : FX_B);
+        if (worth[p] < 0) { text35(40, y, "BUST", RED); continue; }
+        gfx_fillRect(40, y, (int)(worth[p] * 40 / top * grow >> 8), 5, stage::SEAT_COLOUR[p]);
         fmtMoney(buf, worth[p] * grow >> 8);
-        text35(41, y + 8, buf, i ? SILVER : GOLD);
+        text35(108 - text35Width(buf), y, buf, i ? SILVER : GOLD);
     }
-    if (frame & 32) centred35(104, "A AGAIN   B MENU", WHITE);
+    // The story of the game: everyone's worth, round by round, drawn out
+    // left to right (the winner's line last, on top).
+    int y0 = 34 + n * 9, y1 = 101;
+    gfx_hline(20, y1, 89, FELT_DK);
+    if (nHist > 1) {
+        // Scaled to the range it covers, so the lead changes show.
+        int lo = 0x7FFF, hi = 0;
+        for (uint8_t p = 0; p < n; p++)
+            for (uint8_t k = 0; k < nHist; k++) {
+                if (hist[p][k] < lo) lo = hist[p][k];
+                if (hist[p][k] > hi) hi = hist[p][k];
+            }
+        int span = hi > lo ? hi - lo : 1, h = y1 - 1 - y0, shown = (nHist - 1) * grow >> 8;
+        for (uint8_t i = n; i--;) {
+            uint8_t p = order[i];
+            for (int k = 0; k < shown; k++)
+                gfx_line(20 + k * 88 / (nHist - 1), y1 - 1 - (hist[p][k] - lo) * h / span,
+                         20 + (k + 1) * 88 / (nHist - 1), y1 - 1 - (hist[p][k + 1] - lo) * h / span, stage::SEAT_COLOUR[p]);
+        }
+    }
+    if (frame & 32) centred35(106, "A AGAIN   B MENU", WHITE);
 }
 
 static void playRender(uint32_t frame) {

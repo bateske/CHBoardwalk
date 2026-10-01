@@ -66,6 +66,8 @@ static uint8_t bidPop;
 
 static uint8_t growTile = NOBODY, growT;    // a house just built, popping up
 static uint8_t topSeat = NOBODY, topT;      // bankrupt: its token topples
+static uint8_t setTile = NOBODY;            // a deed just changed hands: did it make a set?
+static uint8_t setGroup, setT;              // ... it did: the group lights up
 
 // Coins in flight (screen space); the last of a payment carries the amount.
 struct Fly { int16_t x0, y0, x1, y1, amount; int8_t t; uint8_t seat, on; };
@@ -238,7 +240,8 @@ static void sync(bool fresh) {
     fx::clear();
     diceT = popKind = holdT = pickT = plT = topT = overT = 0;
     waitPress = popClosing = closeAfterHold = aucOn = over = overDone = glove = false;
-    topSeat = growTile = lastHuman = NOBODY;
+    topSeat = growTile = lastHuman = setTile = NOBODY;
+    setT = 0;
     manageTile = -1;
     turn = st.cur;
     setZoom(zoomTo = 5);
@@ -261,6 +264,12 @@ static void openPopup(uint8_t kind, uint8_t a, uint8_t b) {
     audio::sfx(Sfx::Flip);
 }
 
+static uint8_t humans() {
+    uint8_t n = 0;
+    for (uint8_t p = 0; p < st.players; p++) n += isHuman(p);
+    return n;
+}
+
 static void onTurn(const Event &e) {
     turn = e.a;
     humanTurn = e.b != 0;
@@ -273,9 +282,7 @@ static void onTurn(const Event &e) {
     if (!e.c) plT = 0;
     if (!humanTurn) { holdT = 10; return; }
     // Several humans: the handheld changes hands.
-    uint8_t humans = 0;
-    for (uint8_t p = 0; p < st.players; p++) humans += isHuman(p);
-    if (humans > 1 && lastHuman != turn) {
+    if (humans() > 1 && lastHuman != turn) {
         char name[10], *p = fmtStr(name, "PLAYER ");
         *p++ = (char)('1' + turn);
         *p = 0;
@@ -315,10 +322,23 @@ static void onPay(const Event &e) {
         audio::led(audio::LED_PARTY);
         holdT = 60;
     }
+    if (e.c == R_GO && amount > 200) {
+        fx::banner("PAYDAY!", fx::B_RAINBOW, 40, 70);
+        fx::fountain(fx::COIN, CX, 90, 12);
+        audio::sfx(Sfx::Win);
+        holdT = quick() ? 30 : 50;
+    }
     if (e.c == R_RENT || e.c == R_TAX) {
         fmtMoney(fmtStr(buf, e.c == R_RENT ? "RENT " : "TAX "), amount);
-        fx::banner(buf, fx::B_RED, 40, 50);
+        // Red when you pay it, gold when a CPU pays you.
+        fx::banner(buf, e.b < SEATS && isHuman(e.b) && !isHuman(e.a) ? fx::B_GOLD : fx::B_RED, 40, 50);
         holdT = quick() ? 20 : 40;
+        if (amount >= 300) {                                // a hotel's worth: it lands like one
+            fx::shake(14, 3);
+            fx::fountain(fx::COIN, CX, 90, 10);
+            audio::led(audio::LED_TRIPLE);
+            holdT = (uint8_t)(holdT + 20);
+        }
     }
 }
 
@@ -343,6 +363,26 @@ static void onLand(uint8_t t, int pot) {
     if (pot) fmtMoney(fmtStr(tag, " "), pot);
     say(name, WHITE, tag, c);
     holdT = quick() ? 4 : 14;
+}
+
+// A deed that gives its new owner most of its colour (so they may build
+// there) or all of it: the group lights up and the table hears about it.
+static void setCall() {
+    uint8_t t = setTile, o = (uint8_t)(sDeed[t] & 7), tiles[4], have = 0;
+    setTile = NOBODY;
+    if (type(t) != STREET || o >= SEATS) return;
+    uint8_t n = groupTiles(group(t), tiles);
+    for (uint8_t i = 0; i < n; i++) have += (sDeed[tiles[i]] & 7) == o;
+    if (have == n) fx::banner("FULL SET!", fx::B_RAINBOW, 40, 70);
+    else if (2 * have > n && 2 * (have - 1) <= n) fx::banner("CAN BUILD!", fx::B_GOLD, 40, 60);
+    else return;
+    setGroup = group(t);
+    setT = 60;
+    focus = t;
+    fx::fountain(fx::CONFETTI, CX, 70, 14);
+    audio::sfx(Sfx::Doubles);
+    audio::led(audio::LED_TRIPLE);
+    holdT = quick() ? 30 : 56;
 }
 
 // A seat's colour; the bank's is silver.
@@ -404,6 +444,7 @@ static void onEvent(const Event &e) {
             audio::sfx(Sfx::Buy);
             holdT = quick() ? 14 : 34;
             closeAfterHold = true;
+            setTile = e.b;
             break;
         case EV_AUCTION:
             focus = e.a;
@@ -419,12 +460,15 @@ static void onEvent(const Event &e) {
         case EV_SOLD:
             sDeed[e.b] = e.a;
             owned(e.a, e.b);
-            fx::banner(e.amount ? "SOLD!" : "FREE!", e.amount ? fx::B_GOLD : fx::B_CYAN, 60, 60);
+            // Under half its price to a player: a steal.
+            fx::banner(!e.amount ? "FREE!" : e.a < SEATS && 2 * e.amount < price(e.b) ? "A STEAL!" : "SOLD!",
+                       e.amount ? fx::B_GOLD : fx::B_CYAN, 60, 60);
             fx::burst(fx::STAR, 96, 34, 12, 30, colourOf(e.a));
             fx::shake(6, 2);
             audio::sfx(Sfx::Gavel);
             holdT = fast ? 30 : 56;
             closeAfterHold = true;
+            setTile = e.b;
             break;
         case EV_PAY: onPay(e); break;
         case EV_CARD:
@@ -449,8 +493,16 @@ static void onEvent(const Event &e) {
             focus = e.a;
             worldOf(e.a, x, y);
             fx::burst(fx::DUST, toScreenX(x), toScreenY(y), 8, zoomed(20), WHITE);
-            if (e.type == EV_BUILD) { growTile = e.a; growT = 1; audio::sfx(Sfx::Build); }
             holdT = quick() ? 8 : 16;
+            if (e.type == EV_BUILD) {
+                growTile = e.a; growT = 1;
+                audio::sfx(Sfx::Build);
+                if (e.b == 5) {
+                    fx::banner("HOTEL!", fx::B_GOLD, manageTile >= 0 ? 84 : 40, 50);     // (clear of the manage view's keys)
+                    fx::burst(fx::STAR, toScreenX(x), toScreenY(y) - 10, 12, 40, GOLD);
+                    holdT = quick() ? 20 : 40;
+                }
+            }
             break;
         case EV_BANKRUPT:
             fx::banner("BANKRUPT!", fx::B_RED, 40, 110);
@@ -492,7 +544,11 @@ void update() {
         onEvent(e);
     }
 
-    if (holdT && !--holdT && closeAfterHold) { closeAfterHold = false; aucOn = false; closePopup(); }
+    if (holdT && !--holdT) {
+        if (closeAfterHold) { closeAfterHold = false; aucOn = false; closePopup(); }
+        if (setTile != NOBODY) setCall();
+    }
+    if (setT) setT--;
     if (pickT) pickT--;
     if (bidPop) bidPop--;
     // The auction's clock: a tick at going once, a tock at going twice.
@@ -565,7 +621,8 @@ void update() {
         } else if (overT == 1) overT = 80;
         if (overT == 80) {
             char buf[12];
-            fmtStr(seatTag(buf, winner), " WINS!");
+            if (humans() == 1 && isHuman(winner)) fmtStr(buf, "YOU WIN!");
+            else fmtStr(seatTag(buf, winner), " WINS!");
             fx::banner(buf, fx::B_RAINBOW, 40, 160);
             fx::fountain(fx::CONFETTI, 40, 90, 20);
             fx::fountain(fx::COIN, 88, 90, 14);
@@ -708,7 +765,8 @@ static void drawHud(uint32_t frame) {
         bool lit = p == turn && !over;
         if (lit) gfx_fillRect(x, 0, 32, 9, NAVY);
         gfx_fillRect(x + 2, 2, 5, 5, hudFlash[p] & 2 ? WHITE : SEAT_COLOUR[p]);
-        fmtMoney(buf, sCash[p]);
+        if (sCash[p] >= 10000) fmtStr(fmtInt(fmtStr(buf, "$"), sCash[p] / 1000), "K");   // (the slot is 32 px)
+        else fmtMoney(buf, sCash[p]);
         text35(x + 9, 2, buf, hudFlash[p] & 2 ? SEAT_COLOUR[p] : lit ? FX_B : WHITE);
     }
     if (st.players < SEATS && phase() != P_OFF) {           // room for the round, and closing time
@@ -807,6 +865,21 @@ static void drawAuction(uint32_t frame) {
     }
 }
 
+// The jackpot, waiting over Free Parking's corner.
+static void drawPot(uint32_t frame) {
+    if (!st.pot || over || aucOn || popKind || manageTile >= 0) return;
+    char buf[10];
+    int x, y;
+    worldOf(20, x, y);
+    fmtMoney(buf, st.pot);
+    int w = text35Width(buf) + 6, sx = toScreenX(x) - w / 2;
+    int sy = toScreenY(y) - sized(18) + ((fx::isin((int)(frame >> 3) * 40) * 2) >> 8);
+    if (sx < -w || sx > 128 || sy < 10 || sy > 100) return;
+    fillRound(sx, sy, w, 9, 2, NAVY);
+    roundRect(sx, sy, w, 9, 2, GOLD);
+    text35(sx + 3, sy + 2, buf, GOLD);
+}
+
 void hud(uint32_t frame) { drawHud(frame); }
 
 void renderScene(uint32_t) {
@@ -825,7 +898,7 @@ static uint32_t signature(uint32_t frame, uint32_t ui) {
     bool rolling = false, flying = false;
     for (uint8_t p = 0; p < SEATS; p++) rolling |= sCash[p] != cashTo[p] || hudFlash[p];
     for (auto &f : flies) flying |= f.on != 0;
-    if (fx::activeRows(lo, hi) || mv.on || rolling || flying || growT || aucOn || (topT && topT < 40) ||
+    if (fx::activeRows(lo, hi) || mv.on || rolling || flying || growT || setT || aucOn || (topT && topT < 40) ||
         (diceT && diceT <= diceFrames()) || (popKind && (popT < FLIP || popClosing)) || (plT && plT < 8))
         return frame;
     if (cx16 != (int32_t)aimX << 4 || cy16 != (int32_t)aimY << 4) return frame;
@@ -849,7 +922,12 @@ bool render(uint32_t frame, uint32_t ui) {
     drawBoard();
     drawOwners();
     if (manageTile >= 0 && (frame & 16)) tileTint((uint8_t)manageTile, FX_B);
+    if (setT & 8) {
+        uint8_t tiles[4], n = groupTiles(setGroup, tiles);
+        for (uint8_t i = 0; i < n; i++) tileTint(tiles[i], FX_B);
+    }
     drawStanding();
+    drawPot(frame);
     drawGlove(frame);
     drawHud(frame);
     drawDice();
