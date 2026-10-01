@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask/Iso)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
 #include <Arduino.h>
 #include <string.h>
 #include <CHGfx.h>
@@ -11,33 +11,653 @@
 #include "../gfx/Fmt.h"
 #include "../fx/Fx.h"
 #include "../audio/Audio.h"
-#include "../game/Game.h"
 #include "../iso/Iso.h"
+#include "../game/Game.h"
 #include "../stage/Stage.h"
+#include "../render/MapView.h"
 #include "../save/Save.h"
 #include "../debug/Debug.h"
+#ifdef CHSIM
+#include <sim.h>
+#endif
 
-// P1 probe: the board with a made-up game on it, for the look-dev sheet.
 namespace screens {
+
+using namespace game;
+
+enum class Scr : uint8_t { Title, Setup, Play, Options };
+static Scr cur = Scr::Title, pending = Scr::Title;
+static uint16_t t;                   // frames on this screen
+static uint8_t fadeOut, fadeIn;
+static uint8_t sel;                  // menu cursor
+#if !CHBW_LEAN
+static Scr optBack = Scr::Title;
+#endif
 
 static Options opt;
 static Stats stats;
-static bool hasGame;
+static bool hasGame;                 // a saved game is waiting
 
+// Play-screen overlays.
+enum Overlay : uint8_t { NONE, PAUSE, MAP, CONFIRM, RESULT };
+static Overlay overlay;
+static bool statsCounted;
+static bool managing;                // the manage view: the glove on your deeds
+static uint8_t mTile;
+static uint8_t barSel;
+
+// ---------------------------------------------------------------------------
+// Flow
+// ---------------------------------------------------------------------------
+static void go(Scr s) {
+    if (fadeOut) return;
+    pending = s;
+    fadeOut = 8;
+}
+
+static void flushEvents() {
+    Event e;
+    while (popEvent(e)) {}
+}
+
+static void enter(Scr s) {
+    cur = s;
+    stage::invalidate();
+    t = 0;
+    sel = 0;
+    fadeIn = 8;
+    fx::clear();
+    if (s == Scr::Title) {
+        // The board behind the title: a table just dealt, close up, the
+        // camera cruising round the ring.
+        Setup demo = {{CPU, CPU, CPU, CPU}, 0, 7};
+        start(demo);
+        flushEvents();
+        stage::reset();
+        stage::setZoom(10);
+        audio::sfx(Sfx::Title);
+    }
+    if (s == Scr::Play) {
+        overlay = NONE;
+        statsCounted = managing = false;
+        stage::manage(-1);
+    }
+}
+
+static void persist(bool withGame) {
+    gfx_wait();                      // save builds its page in the chunk scratch
+    save::store(opt, stats, withGame);
+    hasGame = withGame;
+}
+
+static void applyOptions() {
+    audio::setOn(opt.sound != 0);
+    stage::setFast(opt.pace != 0);
+}
+
+// ---------------------------------------------------------------------------
+// Shared drawing (CHBlackjack's look)
+// ---------------------------------------------------------------------------
+static void feltBackdrop() {
+    gfx_clear(FELT);
+    dither(0, 0, 128, 6, FELT_DK, 0);
+    dither(0, 122, 128, 6, FELT_DK, 1);
+    dither(0, 0, 6, 128, FELT_DK, 0);
+    dither(122, 0, 6, 128, FELT_DK, 1);
+    gfx_rect(2, 2, 124, 124, GOLD);
+}
+
+// Big lettering in PPOT's font (3x) with a gradient, outline and shadow. The
+// top rows are FX_B, so the palette makes it shimmer.
+static void title35(const char *text, int y) {
+    int w = text35WidthScaled(text, 3);
+    Mask m = maskBegin(w, 18);                   // just the lettering's bytes
+    maskText35(m, 0, 0, text, 3);
+    uint8_t ramp[20];
+    for (int i = 0; i < 20; i++) ramp[i] = i < 3 ? FX_B : (i < 13 ? GOLD : WOOD);
+    maskDraw(m, 64 - w / 2, y, INK, WINE, ramp);
+}
+
+static void centred35(int y, const char *s, uint8_t c) { text35(64 - text35Width(s) / 2, y, s, c); }
+static void centred2(int y, const char *s, uint8_t c) { text35x2(64 - text35x2Width(s) / 2, y, s, c); }
+
+static void menuItem(int y, const char *s, bool on, uint32_t frame) {
+    int w = text35x2Width(s);
+    if (on) {
+        fillRound(64 - w / 2 - 6, y - 3, w + 12, 15, 3, NAVY);
+        roundRect(64 - w / 2 - 6, y - 3, w + 12, 15, 3, (frame & 16) ? FX_B : GOLD);
+    }
+    centred2(y, s, on ? GOLD : WHITE);
+}
+
+static bool menuNav(uint8_t n) {
+    if (arduboy.repeat(UP_BUTTON) && sel > 0) { sel--; audio::sfx(Sfx::Cursor); }
+    if (arduboy.repeat(DOWN_BUTTON) && sel + 1 < n) { sel++; audio::sfx(Sfx::Cursor); }
+    return arduboy.justPressed(A_BUTTON);
+}
+
+static void panel(int y, int h) {
+    fillRound(14, y, 100, h, 3, NAVY);
+    roundRect(14, y, 100, h, 3, GOLD);
+}
+
+static uint32_t seedNow() { return micros() * 2654435761u ^ arduboy.frameCount; }
+
+// ---------------------------------------------------------------------------
+// Title: a dealt table, the camera cruising round the board.
+// ---------------------------------------------------------------------------
+enum Item : uint8_t { I_NEW, I_CONTINUE, I_OPTIONS };
+static const char *const ITEM[3] = {"NEW GAME", "CONTINUE", "OPTIONS"};
+
+static uint8_t titleItems(uint8_t *items) {
+    uint8_t n = 0;
+    if (hasGame) items[n++] = I_CONTINUE;
+    items[n++] = I_NEW;
+#if !CHBW_LEAN
+    items[n++] = I_OPTIONS;
+#endif
+    return n;
+}
+
+static void titleUpdate() {
+    uint8_t items[3], n = titleItems(items);
+    if (sel >= n) sel = 0;
+    if (menuNav(n)) {
+        audio::sfx(Sfx::Select);
+        switch (items[sel]) {
+            case I_NEW: go(Scr::Setup); break;
+            case I_CONTINUE:
+                if (save::loadGame()) go(Scr::Play);
+                else { hasGame = false; audio::sfx(Sfx::Deny); }
+                break;
+#if !CHBW_LEAN
+            case I_OPTIONS: optBack = Scr::Title; go(Scr::Options); break;
+#endif
+        }
+    }
+    // Round the ring, a tile every 48 frames, gliding between their centres.
+    int ax, ay, bx, by, k = t % 48;
+    uint8_t at = (uint8_t)(t / 48 % 40);
+    iso::worldOf(at, ax, ay);
+    iso::worldOf((uint8_t)((at + 1) % 40), bx, by);
+    iso::cam.x = ax + (bx - ax) * k / 48;
+    iso::cam.y = ay + (by - ay) * k / 48 - 6;
+}
+
+static void titleRender(uint32_t frame) {
+    stage::renderScene(frame);
+    dither(0, 0, 128, 30, INK, 0);
+    title35("BOARDWALK", 6);
+    uint8_t items[3], n = titleItems(items);
+    int y0 = 128 - n * 14 - 1;
+    dither(0, y0 - 5, 128, 128 - y0 + 5, INK, 1);
+    for (uint8_t i = 0; i < n; i++) menuItem(y0 + i * 14, ITEM[items[i]], i == sel, frame);
+}
+
+// ---------------------------------------------------------------------------
+// Setup: who sits at the table, and closing time.
+// ---------------------------------------------------------------------------
+static const char *const SEAT[5] = {"EMPTY", "PLAYER", "CPU EASY", "CPU FAIR", "CPU SHARK"};
+
+static void newGame() {
+    Setup s;
+    memcpy(s.kind, opt.seat, SEATS);
+    s.roundCap = (uint8_t)(opt.rounds * 10);
+    s.seed = seedNow();
+    start(s);
+    go(Scr::Play);
+}
+
+static void setupUpdate() {
+    int d = arduboy.repeat(RIGHT_BUTTON) ? 1 : (arduboy.repeat(LEFT_BUTTON) ? -1 : 0);
+    if (arduboy.repeat(UP_BUTTON) && sel > 0) { sel--; audio::sfx(Sfx::Cursor); }
+    if (arduboy.repeat(DOWN_BUTTON) && sel < 5) { sel++; audio::sfx(Sfx::Cursor); }
+    if (d && sel < 4) {
+        // The first two seats are always taken.
+        uint8_t &k = opt.seat[sel];
+        do k = (uint8_t)((k + 5 + d) % 5); while (!k && sel < 2);
+        audio::sfx(Sfx::Coin);
+    }
+    if (d && sel == 4) { opt.rounds = (uint8_t)((opt.rounds + 5 + d) % 6 + 1); audio::sfx(Sfx::Coin); }
+    if (arduboy.justPressed(A_BUTTON)) {
+        if (sel < 5) { sel++; audio::sfx(Sfx::Cursor); }
+        else { audio::sfx(Sfx::Select); persist(false); newGame(); }
+    }
+    if (arduboy.justPressed(B_BUTTON)) { audio::sfx(Sfx::Select); go(Scr::Title); }
+}
+
+static void arrows(int y, int x0, int x1, uint32_t frame) {
+    int bob = (frame >> 3) & 1;
+    text35(x0 - 6 - bob, y, "<", GOLD);
+    text35(x1 + 3 + bob, y, ">", GOLD);
+}
+
+static void setupRender(uint32_t frame) {
+    feltBackdrop();
+    title35("THE TABLE", 8);
+    char buf[16];
+    for (uint8_t i = 0; i < 5; i++) {
+        int y = 32 + i * 13;
+        bool on = sel == i;
+        if (on) fillRound(12, y - 3, 104, 15, 3, NAVY);
+        if (i < 4) {
+            gfx_fillRect(18, y + 1, 7, 7, INK);
+            gfx_fillRect(19, y + 2, 5, 5, stage::SEAT_COLOUR[i]);
+            fmtStr(buf, SEAT[opt.seat[i]]);
+        } else {
+            fmtStr(fmtInt(buf, opt.rounds * 10), " ROUNDS");
+        }
+        text35x2(32, y, buf, on ? GOLD : (i < 4 && !opt.seat[i]) ? FELT_LT : WHITE);
+        if (on) arrows(y + 3, 32, 32 + text35x2Width(buf), frame);
+    }
+    menuItem(104, "BEGIN", sel == 5, frame);
+}
+
+// ---------------------------------------------------------------------------
+// Play: the action bar
+// ---------------------------------------------------------------------------
+enum Btn : uint8_t { B_ROLL, B_PAY, B_CARD, B_MANAGE, B_BUY, B_AUCTION };
+static const char *const BTN[6] = {"ROLL", "PAY $50", "CARD", "MANAGE", "BUY", "AUCTION"};
+static const uint8_t BTN_COLOUR[6] = {FELT_LT, GOLD, CYAN, BLUE, FELT_LT, RED};
+static uint8_t btn[4], nBtn;
+
+// The buttons the player at the turn has: on an unowned deed, or before
+// the roll. `also`: one the CPU has just pressed (it may be gone already).
+static void barFor(bool offer, uint8_t also = 0xFF) {
+    const Player &me = st.pl[st.cur];
+    nBtn = 0;
+    if (offer) { btn[nBtn++] = B_BUY; btn[nBtn++] = B_AUCTION; return; }
+    btn[nBtn++] = B_ROLL;
+    if (me.jail || also == B_PAY) btn[nBtn++] = B_PAY;
+    if (me.jail ? (me.flags & (F_CARD | F_CARD << 1)) != 0 : also == B_CARD) btn[nBtn++] = B_CARD;
+    for (uint8_t i = 0; i < board::TILES; i++)
+        if (owner(i) == st.cur) { btn[nBtn++] = B_MANAGE; break; }
+}
+
+static bool showBar;
+static uint8_t pressed = 0xFF;       // the CPU's choice, lit
+
+static void drawBar(uint32_t frame) {
+    char label[4][12];
+    int w[4], total = -3;
+    for (uint8_t i = 0; i < nBtn; i++) {
+        char *p = fmtStr(label[i], BTN[btn[i]]);
+        if (btn[i] == B_BUY) fmtMoney(fmtStr(p, " "), board::price(st.pl[st.cur].pos));
+        w[i] = text35Width(label[i]) + 8;
+        total += w[i] + 3;
+    }
+    gfx_fillRect(0, 112, 128, 16, NAVY);
+    gfx_hline(0, 111, 128, GOLD);
+    int x = 64 - total / 2;
+    for (uint8_t i = 0; i < nBtn; i++) {
+        bool on = pressed == 0xFF ? i == barSel : btn[i] == pressed;
+        uint8_t c = BTN_COLOUR[btn[i]];
+        bool dim = btn[i] == B_PAY && st.pl[st.cur].cash < 50;
+        int y = on ? (pressed == 0xFF ? 113 : 115) : 114;
+        fillRound(x, y, w[i], 11, 2, dim ? SILVER : c);
+        if (on) roundRect(x, y, w[i], 11, 2, (frame & 8) ? WHITE : FX_B);
+        text35(x + 4, y + 3, label[i], c == BLUE || c == RED ? WHITE : INK);
+        x += w[i] + 3;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Play: input
+// ---------------------------------------------------------------------------
+
+// The manage view walks your deeds in board order.
+static void manageStep(int d) {
+    uint8_t k = mTile;
+    for (uint8_t i = 0; i < board::TILES; i++) {
+        k = (uint8_t)((k + board::TILES + d) % board::TILES);
+        if (owner(k) == st.cur) break;
+    }
+    mTile = k;
+    stage::manage(k);
+}
+
+static void manageInput() {
+    if (arduboy.repeat(LEFT_BUTTON)) { manageStep(-1); audio::sfx(Sfx::Cursor); }
+    if (arduboy.repeat(RIGHT_BUTTON)) { manageStep(1); audio::sfx(Sfx::Cursor); }
+    if (arduboy.justPressed(UP_BUTTON) && !build(mTile)) audio::sfx(Sfx::Deny);
+    if (arduboy.justPressed(DOWN_BUTTON) && !sell(mTile)) audio::sfx(Sfx::Deny);
+    if (arduboy.justPressed(A_BUTTON)) {
+        if (canOffer(mTile)) { overlay = CONFIRM; audio::sfx(Sfx::Select); }
+        else audio::sfx(Sfx::Deny);
+    }
+    if (arduboy.justPressed(B_BUTTON)) { managing = false; stage::manage(-1); audio::sfx(Sfx::Cursor); }
+}
+
+static void barInput() {
+    if (barSel >= nBtn) barSel = 0;
+    if (arduboy.repeat(LEFT_BUTTON) && barSel > 0) { barSel--; audio::sfx(Sfx::Cursor); }
+    if (arduboy.repeat(RIGHT_BUTTON) && barSel + 1 < nBtn) { barSel++; audio::sfx(Sfx::Cursor); }
+    if (!arduboy.justPressed(A_BUTTON)) return;
+    bool ok = true;
+    switch (btn[barSel]) {
+        case B_ROLL:    ok = roll(); break;
+        case B_PAY:     ok = payJail(); break;
+        case B_CARD:    ok = useJailCard(); break;
+        case B_BUY:     ok = buy(); break;
+        case B_AUCTION: ok = decline(); break;
+        case B_MANAGE:
+            managing = true;
+            mTile = st.pl[st.cur].pos;
+            if (owner(mTile) != st.cur) manageStep(1); else stage::manage(mTile);
+            break;
+    }
+    audio::sfx(ok ? Sfx::Select : Sfx::Deny);
+    barSel = 0;
+}
+
+// The auction: every human has a button of their own - A, the D-pad, B,
+// SELECT, in seat order - and taps it to take the lead.
+static void auctionInput() {
+    static const uint8_t TAP[4] = {A_BUTTON, UP_BUTTON | DOWN_BUTTON | LEFT_BUTTON | RIGHT_BUTTON, B_BUTTON,
+                                   SELECT_BUTTON};
+    uint8_t human = 0, down = arduboy.justPressedMask();
+    for (uint8_t p = 0; p < st.players; p++) {
+        if (!isHuman(p)) continue;
+        if ((down & TAP[human++]) && p != auc.seller && !bid(p)) audio::sfx(Sfx::Deny);
+    }
+}
+
+enum Action : uint8_t { A_RESUME, A_OPTIONS, A_QUIT };
+static const char *const PAUSE_ITEM[3] = {"RESUME", "OPTIONS", "SAVE + QUIT"};
+
+static void pauseInput() {
+    bool startKey = arduboy.justPressed(START_BUTTON);
+    if (menuNav(3) || startKey) {
+        uint8_t a = startKey ? (uint8_t)A_RESUME : sel;
+        overlay = NONE;
+        audio::sfx(Sfx::Select);
+#if !CHBW_LEAN
+        if (a == A_OPTIONS) { optBack = Scr::Play; go(Scr::Options); }
+#endif
+        if (a == A_QUIT) { persist(active()); go(Scr::Title); }
+        return;
+    }
+    if (arduboy.justPressed(B_BUTTON)) overlay = NONE;
+}
+
+static void countResult() {
+    if (statsCounted) return;
+    statsCounted = true;
+    stats.games++;
+    if (isHuman(st.winner)) stats.humanWins++; else stats.cpuWins++;
+    if (st.over == BY_BANKRUPTCY + 1) stats.busts++;
+    int32_t w = netWorth(st.winner);
+    if (w > stats.best) stats.best = w;
+    persist(false);
+}
+
+static void playUpdate() {
+    bool auction = phase() == P_AUCTION;
+    switch (overlay) {
+        case PAUSE: pauseInput(); return;            // the game (and the auction's clock) stands still
+        case MAP:
+            if (arduboy.justPressed(SELECT_BUTTON) || arduboy.justPressed(B_BUTTON)) {
+                overlay = NONE;
+                stage::invalidate();
+                audio::sfx(Sfx::Whoosh);
+            }
+            return;
+        case CONFIRM:
+            if (arduboy.justPressed(A_BUTTON) && offer(mTile)) { overlay = NONE; managing = false; stage::manage(-1); audio::sfx(Sfx::Select); }
+            else if (arduboy.justPressedMask() & (A_BUTTON | B_BUTTON)) { overlay = NONE; audio::sfx(Sfx::Cursor); }
+            return;
+        case RESULT:
+            if (arduboy.justPressed(A_BUTTON)) { audio::sfx(Sfx::Select); newGame(); }
+            if (arduboy.justPressed(B_BUTTON)) { audio::sfx(Sfx::Select); go(Scr::Title); }
+            break;
+        default:
+            if (arduboy.justPressed(START_BUTTON)) { overlay = PAUSE; sel = 0; audio::sfx(Sfx::Select); return; }
+            if (auction) { if (auc.started) auctionInput(); break; }
+            if (arduboy.justPressed(SELECT_BUTTON)) { overlay = MAP; audio::sfx(Sfx::Whoosh); return; }
+            if (stage::waiting()) {
+                if (arduboy.justPressedMask()) { stage::acknowledge(); audio::sfx(Sfx::Select); }
+                break;
+            }
+            if (humanToAct() && !stage::busy()) {
+                if (managing) manageInput();
+                else { barFor(phase() == P_OFFER); barInput(); }
+            }
+            break;
+    }
+    // What the bar shows: your choices, or the CPU's choice as it makes it.
+    uint8_t pick = stage::picked();
+    pressed = 0xFF;
+    showBar = false;
+    if (overlay == NONE || overlay == CONFIRM) {
+        if (pick) {
+            static const uint8_t ACT_BTN[7] = {B_ROLL, B_PAY, B_CARD, B_BUY, B_AUCTION, B_MANAGE, B_MANAGE};
+            pressed = ACT_BTN[pick - 1];
+            barFor(pressed == B_BUY || pressed == B_AUCTION, pressed);
+            showBar = true;
+        } else if (humanToAct() && !stage::busy() && !stage::waiting() && !managing) {
+            barFor(phase() == P_OFFER);
+            showBar = true;
+        }
+    }
+    stage::setBar(showBar || managing);
+    game::update(stage::busy());
+    stage::update();
+    if (phase() == P_OVER && stage::overShown() && overlay != RESULT) {
+        countResult();
+        overlay = RESULT;
+        t = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Play: what is drawn over the stage
+// ---------------------------------------------------------------------------
+
+// The manage view's keys, beside the deed's card.
+static void drawManage() {
+    char buf[20];
+    const int x = 68;
+    fillRound(x, 15, 58, 48, 3, NAVY);
+    roundRect(x, 15, 58, 48, 3, GOLD);
+    text35(x + 5, 19, "YOUR DEEDS", GOLD);
+    text35(x + 5, 28, "< > NEXT", WHITE);
+    fmtMoney(fmtStr(buf, "UP BUILD "), board::houseCost(mTile));
+    text35(x + 5, 36, buf, canBuild(mTile) ? WHITE : SILVER);
+    fmtMoney(fmtStr(buf, "DN SELL "), board::houseCost(mTile) / 2);
+    text35(x + 5, 44, buf, canSell(mTile) ? WHITE : SILVER);
+    text35(x + 5, 52, "A AUCTION IT", canOffer(mTile) ? WHITE : SILVER);
+    centred35(119, "B: BACK", WHITE);
+}
+
+// Who finished where: net worth, a bar for each growing as the count goes.
+static void drawResult(uint32_t frame) {
+    char buf[16];
+    uint8_t order[SEATS], n = st.players;
+    int32_t worth[SEATS], top = 1;
+    for (uint8_t p = 0; p < n; p++) {
+        order[p] = p;
+        worth[p] = st.pl[p].flags & F_BUST ? -1 : netWorth(p);
+        if (worth[p] > top) top = worth[p];
+    }
+    for (uint8_t i = 0; i < n; i++)
+        for (uint8_t j = (uint8_t)(i + 1); j < n; j++)
+            if (order[j] == st.winner || (order[i] != st.winner && worth[order[j]] > worth[order[i]])) {
+                uint8_t s = order[i]; order[i] = order[j]; order[j] = s;
+            }
+    panel(16, 96);
+    centred2(20, st.over == BY_CLOSING + 1 ? "CLOSING TIME" : "BANKRUPT!", FX_B);
+    int grow = fx::ease(fx::OUT_CUBIC, t > 60 ? 60 : t, 60);
+    for (uint8_t i = 0; i < n; i++) {
+        uint8_t p = order[i];
+        int y = 38 + i * 15;
+        gfx_fillRect(20, y + 1, 5, 5, stage::SEAT_COLOUR[p]);
+        buf[0] = 'P'; buf[1] = (char)('1' + p); buf[2] = 0;
+        text35(28, y + 1, buf, i ? WHITE : FX_B);
+        if (worth[p] < 0) { text35(40, y + 1, "BUST", RED); continue; }
+        int w = (int)(worth[p] * 66 / top * grow >> 8);
+        gfx_fillRect(40, y, w, 7, stage::SEAT_COLOUR[p]);
+        fmtMoney(buf, worth[p] * grow >> 8);
+        text35(41, y + 8, buf, i ? SILVER : GOLD);
+    }
+    if (frame & 32) centred35(104, "A AGAIN   B MENU", WHITE);
+}
+
+static void playRender(uint32_t frame) {
+    if (overlay == MAP) {
+        stage::hud(frame);
+        mapview::draw(frame);
+        centred35(119, "SELECT: BACK", SILVER);
+        return;
+    }
+    uint32_t ui = overlay | (sel << 4) | (barSel << 8) | ((uint32_t)showBar << 12) | ((uint32_t)pressed << 16) |
+                  ((uint32_t)managing << 24);
+    if (overlay || showBar || managing) ui ^= (frame >> 3) << 25;       // blinking borders
+    if (overlay == RESULT) ui = frame;
+    if (!stage::render(frame, ui)) return;
+    if (managing) drawManage();
+    else if (showBar) drawBar(frame);
+    if (overlay == PAUSE) {
+        panel(36, 52);
+        for (uint8_t i = 0; i < 3; i++) {
+            int y = 42 + i * 14;
+            if (i == sel) fillRound(18, y - 3, 92, 15, 3, INK);
+            centred2(y, PAUSE_ITEM[i], i == sel ? FX_B : WHITE);
+        }
+    } else if (overlay == CONFIRM) {
+        panel(76, 30);
+        centred35(80, "AUCTION IT OFF?", FX_B);
+        centred35(88, "IT SELLS, EVEN FOR $0", WHITE);
+        centred35(97, "A: YES   B: NO", GOLD);
+    } else if (overlay == RESULT) {
+        drawResult(frame);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Options (device debug builds leave the screen out to fit the protocol)
+// ---------------------------------------------------------------------------
+#if !CHBW_LEAN
+enum Opt : uint8_t { O_SOUND, O_PACE, O_BACK, OPT_COUNT };
+static const char *const OPT_TEXT[OPT_COUNT] = {"SOUND|OFF|ON", "PACE|FUN|QUICK", "BACK"};
+
+static uint8_t optField(const char *s, uint8_t k, char *buf) {
+    uint8_t n = 0;
+    for (;;) {
+        const char *e = s;
+        while (*e && *e != '|') e++;
+        if (n == k) { uint8_t len = (uint8_t)(e - s); memcpy(buf, s, len); buf[len] = 0; }
+        n++;
+        if (!*e) return n;
+        s = e + 1;
+    }
+}
+
+static void optionsUpdate() {
+    if (arduboy.repeat(UP_BUTTON)) { sel = (uint8_t)((sel + OPT_COUNT - 1) % OPT_COUNT); audio::sfx(Sfx::Cursor); }
+    if (arduboy.repeat(DOWN_BUTTON)) { sel = (uint8_t)((sel + 1) % OPT_COUNT); audio::sfx(Sfx::Cursor); }
+    int d = arduboy.justPressed(RIGHT_BUTTON) ? 1 : (arduboy.justPressed(LEFT_BUTTON) ? -1 : 0);
+    if (arduboy.justPressed(A_BUTTON) && sel != O_BACK) d = 1;
+    if (d && sel != O_BACK) {
+        char tmp[12];
+        uint8_t n = (uint8_t)(optField(OPT_TEXT[sel], 0, tmp) - 1);
+        uint8_t &f = ((uint8_t *)&opt)[sel];
+        f = (uint8_t)((f + n + d) % n);
+        applyOptions();
+        audio::sfx(Sfx::Coin);
+    }
+    if ((arduboy.justPressed(A_BUTTON) && sel == O_BACK) || arduboy.justPressed(B_BUTTON)) {
+        audio::sfx(Sfx::Select);
+        persist(hasGame);
+        go(optBack);
+    }
+}
+
+static void optionsRender(uint32_t frame) {
+    feltBackdrop();
+    title35("OPTIONS", 7);
+    char buf[32];
+    for (uint8_t i = 0; i < OPT_COUNT; i++) {
+        int y = 32 + i * 14;
+        char label[12], value[12];
+        optField(OPT_TEXT[i], 0, label);
+        if (i == sel) {
+            fillRound(8, y - 3, 112, 15, 3, NAVY);
+            roundRect(8, y - 3, 112, 15, 3, (frame & 16) ? FX_B : GOLD);
+        }
+        if (i == O_BACK) { centred2(y, label, i == sel ? GOLD : WHITE); continue; }
+        text35x2(15, y, label, i == sel ? GOLD : WHITE);
+        optField(OPT_TEXT[i], (uint8_t)(((uint8_t *)&opt)[i] + 1), value);
+        text35x2(114 - text35x2Width(value), y, value, i == sel ? WHITE : FELT_LT);
+    }
+    // The house's records.
+    char *p = fmtInt(fmtStr(buf, "GAMES "), stats.games);
+    p = fmtInt(fmtStr(p, "  YOU "), stats.humanWins);
+    fmtInt(fmtStr(p, "  CPU "), stats.cpuWins);
+    centred35(82, buf, GOLD);
+    fmtMoney(fmtStr(buf, "RICHEST WINNER "), stats.best);
+    centred35(90, buf, GOLD);
+    centred35(108, "BOARDWALK " CHBW_VERSION " FOR CHGAME", SILVER);
+    centred35(115, "FONT: PRESS PLAY ON TAPE", SILVER);
+}
+#endif
+
+// ---------------------------------------------------------------------------
+// Debug protocol hooks (tools/chsim/chdrive.py 'say')
+// ---------------------------------------------------------------------------
 #if CHBW_DEBUG
-//   Z <tileH>            zoom
-//   C <tile>             look at a tile
-//   O <light> <dark> <solid>   tile tones (palette indices) and solid pink/orange
-//   F                    a made-up mid-game: deeds, houses, tokens
+//   G <k0> <k1> <k2> <k3> <rounds> <seed>   start a game (kinds: 0 empty, 1 human, 2-4 CPU)
+//   D <d1> <d2>                             the next roll
+//   A <deck> <card>                         the card on top of a deck (0 Chance, 1 Chest)
+//   $ <player> <cash>
+//   E <tile> <owner> <level>                a deed (owner 7: the bank)
+//   T <player> <tile> [jail]                a token
+//   J <0|1|2>                               jump to title/setup/options
+//   H                                       BOARD <phase> <at the turn> <waiting for you 0|1> <for a press 0|1>
+//   V <tile> <zoom>                         (simulator) look at a tile
+//   X <light> <dark> <solid>                (simulator) tile tones, solid pink and orange
+//   F <tile>                                (simulator) a made-up mid-game, tokens round a tile
 static bool debugHook(char cmd, const char *args) {
-    using namespace game;
+    char buf[48], *p;
+    uint32_t a = dbg::parseNum(args, 10), b = dbg::parseNum(args, 10), c = dbg::parseNum(args, 10);
     switch (cmd) {
-        case 'Z': stage::setZoom((uint8_t)dbg::parseNum(args, 10)); return true;
-        case 'C': stage::lookAt((uint8_t)dbg::parseNum(args, 10)); return true;
-        case 'O':
-            iso::lightTile = (uint8_t)dbg::parseNum(args, 10);
-            iso::darkTile = (uint8_t)dbg::parseNum(args, 10);
-            iso::solidGroups = dbg::parseNum(args, 10) != 0;
+        case 'G': {
+            Setup s = {{(uint8_t)a, (uint8_t)b, (uint8_t)c, (uint8_t)dbg::parseNum(args, 10)}, 0, 0};
+            s.roundCap = (uint8_t)dbg::parseNum(args, 10);
+            s.seed = dbg::parseNum(args, 10);
+            start(s);
+            enter(Scr::Play);
+            fadeIn = fadeOut = 0;
+            pal::setFade(16);
+            return true;
+        }
+        case 'D': forceDice((uint8_t)a, (uint8_t)b); return true;
+        case 'A': st.deck[a & 1][st.top[a & 1]] = (uint8_t)b; return true;
+        case '$': st.pl[a & 3].cash = (int32_t)b; stage::reset(); return true;
+        case 'E': st.deed[a % board::TILES] = (uint8_t)(b | c << 3); stage::reset(); return true;
+        case 'T': st.pl[a & 3].pos = (uint8_t)b; st.pl[a & 3].jail = (uint8_t)c; stage::reset(); return true;
+        case 'H':
+            p = fmtInt(fmtStr(buf, "BOARD "), phase());
+            p = fmtInt(fmtStr(p, " "), st.cur);
+            p = fmtStr(p, humanToAct() && !stage::busy() && !stage::waiting() && overlay == NONE ? " 1" : " 0");
+            p = fmtStr(p, stage::waiting() ? " 1" : " 0");
+            fmtStr(p, "\n");
+            dbg::print(buf);
+            return true;
+#ifdef CHSIM
+        case 'J': {
+            static const Scr S[] = {Scr::Title, Scr::Setup, Scr::Options};
+            if (a > 2) return false;
+            enter(S[a]);
+            return true;
+        }
+        case 'V':
+            stage::setZoom((uint8_t)(b ? b : 5));
+            stage::lookAt((uint8_t)a);
+            return true;
+        case 'X':
+            iso::lightTile = (uint8_t)a;
+            iso::darkTile = (uint8_t)b;
+            iso::solidGroups = c != 0;
             return true;
         case 'F': {
             static const uint8_t OWN[][2] = {
@@ -50,34 +670,91 @@ static bool debugHook(char cmd, const char *args) {
                                             {16, 1}, {21, 5}, {23, 4}, {24, 4}, {26, 2}, {31, 5}, {32, 5}, {34, 5},
                                             {37, 3}, {39, 4}};
             for (auto &l : LV) st.deed[l[0]] |= (uint8_t)(l[1] << 3);
-            uint8_t at = (uint8_t)dbg::parseNum(args, 10);
-            st.pl[0].pos = at; st.pl[1].pos = at; st.pl[2].pos = (uint8_t)((at + 1) % 40); st.pl[3].pos = (uint8_t)((at + 39) % 40);
+            st.pl[0].pos = st.pl[1].pos = (uint8_t)a;
+            st.pl[2].pos = (uint8_t)((a + 1) % 40);
+            st.pl[3].pos = (uint8_t)((a + 39) % 40);
+            stage::reset();
             return true;
         }
+        case 'Q': {
+            // Calibration for the cost estimate: host ns for the primitives
+            // the CHGfx benchmark measured on the board (benchmark-results.txt).
+            static uint8_t spr[8 * 16];
+            memset(spr, 0x3F, sizeof spr);
+            uint64_t t0, r[5];
+            t0 = sim_hostNanos(); for (int i = 0; i < 200; i++) gfx_clear((uint8_t)i); r[0] = (sim_hostNanos() - t0) / 200;
+            t0 = sim_hostNanos(); for (int i = 0; i < 20000; i++) gfx_hline(0, i & 127, 128, (uint8_t)i); r[1] = (sim_hostNanos() - t0) / 20000;
+            t0 = sim_hostNanos(); for (int i = 0; i < 2000; i++) gfx_blit(spr, i & 63, i & 63, 16, 16, 15); r[2] = (sim_hostNanos() - t0) / 2000;
+            t0 = sim_hostNanos(); for (int i = 0; i < 1000; i++) gfx_text(0, i & 63, "ABCDEFGHIJKLMNOPQRSTUVWX", 1); r[3] = (sim_hostNanos() - t0) / 1000;
+            t0 = sim_hostNanos(); for (int i = 0; i < 1000; i++) gfx_fillCircle(64, 64, 30, (uint8_t)i); r[4] = (sim_hostNanos() - t0) / 1000;
+            char cal[96], *q2 = fmtStr(cal, "CAL");
+            for (int k = 0; k < 5; k++) { *q2++ = ' '; q2 = fmtInt(q2, (int32_t)r[k]); }
+            fmtStr(q2, "\n");
+            dbg::print(cal);
+            return true;
+        }
+#endif
     }
     return false;
 }
+
+// A scripted change to the game waits until the stage has caught up with
+// it (a held banner or card is answered as a press would).
+static bool settling(char cmd) {
+    if (cmd == 'H' || cmd == 'G' || cmd == 'D' || cmd == 'J' || cmd == 'Q') return false;
+    if (cur != Scr::Play) return false;
+    if (stage::waiting()) stage::acknowledge();
+    return stage::busy();
+}
 #endif
 
+// ---------------------------------------------------------------------------
 void begin() {
+    stage::begin();
     opt.sound = 1;
+    opt.seat[0] = HUMAN; opt.seat[1] = opt.seat[2] = CPU + 1;
+    opt.rounds = 3;
     save::load(opt, stats, hasGame);
-    audio::begin(opt.sound != 0);
-    game::Setup s = {{game::HUMAN, game::HUMAN, game::HUMAN, game::HUMAN}, 30, 1};
-    game::start(s);
-    stage::lookAt(0);
+    if (!opt.rounds || opt.rounds > 6) opt.rounds = 3;
+    applyOptions();
 #if CHBW_DEBUG
     dbg::hook = debugHook;
+    dbg::holdGame = settling;
 #endif
+    enter(Scr::Title);
 }
 
 void update() {
-    stage::update();
+    t++;
+    if (fadeOut) {
+        pal::setFade((uint8_t)((fadeOut - 1) * 2));
+        if (--fadeOut == 0) enter(pending);
+        fx::update();
+        return;
+    }
+    if (fadeIn) { fadeIn--; pal::setFade((uint8_t)(16 - fadeIn * 2)); }
+    switch (cur) {
+        case Scr::Title:   titleUpdate(); break;
+        case Scr::Setup:   setupUpdate(); break;
+        case Scr::Play:    playUpdate(); break;
+#if !CHBW_LEAN
+        case Scr::Options: optionsUpdate(); break;
+#endif
+        default: break;
+    }
     fx::update();
 }
 
 void render(uint32_t frame) {
-    stage::render(frame, 0);
+    switch (cur) {
+        case Scr::Title:   titleRender(frame); break;
+        case Scr::Setup:   setupRender(frame); break;
+        case Scr::Play:    playRender(frame); break;
+#if !CHBW_LEAN
+        case Scr::Options: optionsRender(frame); break;
+#endif
+        default: break;
+    }
 }
 
 }  // namespace screens

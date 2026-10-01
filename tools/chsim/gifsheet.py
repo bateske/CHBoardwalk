@@ -1,39 +1,30 @@
-"""Tile a GIF's frames into one image for review.
+"""Tile frames of a GIF into one image, to look through an animation at a glance.
 
-    python tools/chsim/gifsheet.py IN.gif OUT.png [--every N] [--cols C] [--scale S]
+    python gifsheet.py in.gif out.png [first] [step] [count] [cols]
 """
-import argparse
+import sys
 
 from PIL import Image
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("gif")
-    ap.add_argument("out")
-    ap.add_argument("--every", type=int, default=1)
-    ap.add_argument("--cols", type=int, default=6)
-    ap.add_argument("--scale", type=float, default=0.5)
-    a = ap.parse_args()
-    im = Image.open(a.gif)
+    src, dst = sys.argv[1], sys.argv[2]
+    first = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+    step = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+    count = int(sys.argv[5]) if len(sys.argv) > 5 else 16
+    cols = int(sys.argv[6]) if len(sys.argv) > 6 else 8
+    im = Image.open(src)
     frames = []
-    i = 0
-    try:
-        while True:
-            if i % a.every == 0:
-                f = im.convert("RGB")
-                frames.append(f.resize((int(f.width * a.scale), int(f.height * a.scale)), Image.NEAREST))
-            i += 1
-            im.seek(i)
-    except EOFError:
-        pass
+    for i in range(first, min(first + step * count, im.n_frames), step):
+        im.seek(i)
+        frames.append(im.convert("RGB"))
     w, h = frames[0].size
-    rows = (len(frames) + a.cols - 1) // a.cols
-    sheet = Image.new("RGB", (a.cols * (w + 2), rows * (h + 2)), (40, 40, 40))
+    rows = (len(frames) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * (w + 4) + 4, rows * (h + 4) + 4), (40, 40, 40))
     for k, f in enumerate(frames):
-        sheet.paste(f, ((k % a.cols) * (w + 2), (k // a.cols) * (h + 2)))
-    sheet.save(a.out)
-    print(f"{len(frames)} frames -> {a.out}")
+        sheet.paste(f, (4 + (k % cols) * (w + 4), 4 + (k // cols) * (h + 4)))
+    sheet.save(dst)
+    print(f"{dst}: frames {first}..{first + step * (len(frames) - 1)} of {im.n_frames}")
 
 
 if __name__ == "__main__":

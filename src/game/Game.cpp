@@ -205,13 +205,19 @@ bool bid(uint8_t p) {
     if (!canBid(p)) return false;
     auc.price = (int16_t)nextBid();
     auc.leader = p;
-    auc.timer = AUCTION_WINDOW;
-    // The others take a moment to answer - longer when it is their last.
+    // The others take a moment to answer: quick while the lot is cheap to
+    // them, slower as it nears what they would pay, longest at their last.
+    // With nobody left who could answer, the gavel comes down early.
+    bool open = false;
     for (uint8_t o = 0; o < st.players; o++) {
-        if (!isCpu(o) || o == p) continue;
-        auc.wait[o] = (uint8_t)(14 + rnd() % 40);
+        if (o == p || o == auc.seller || nextBid() > st.pl[o].cash) continue;
+        if (isHuman(o)) { open = true; continue; }
+        if (nextBid() > auc.limit[o]) continue;
+        open = true;
+        auc.wait[o] = (uint8_t)(2 * nextBid() < auc.limit[o] ? 6 + rnd() % 10 : 14 + rnd() % 40);
         if (nextBid() + auc.step > auc.limit[o]) auc.wait[o] = (uint8_t)(auc.wait[o] + 30);
     }
+    auc.timer = open ? AUCTION_WINDOW : AUCTION_LAST;
     push(EV_BID, p, 0, 0, auc.price);
     return true;
 }
@@ -557,7 +563,7 @@ void start(const Setup &s) {
     }
     qHead = qCount = nDue = 0;
     special = false;
-    push(EV_START);
+    push(EV_START, 1);
     // The deal: three deeds each for two players, two each for more.
     uint8_t deeds[28], n = 0;
     for (uint8_t t = 0; t < TILES; t++) if (isDeed(t)) deeds[n++] = t;

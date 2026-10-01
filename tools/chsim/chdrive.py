@@ -12,9 +12,8 @@ Script lines (# comments allowed):
     wait N              advance N frames
     free SECONDS        run free (real time) for a while, then lockstep again
     freegif NAME SECONDS EVERY   the same, sampled into a GIF
-    goto SQ [W]         (simulator) walk the glove to square SQ with D-pad taps
-    board               (simulator) print the board
-    waitturn [W]        (simulator) run until it is your move, then W frames more
+    board               print the game's state line
+    waitturn [W]        run until the game waits for you, then W frames more
     rec start [EVERY] / rec stop NAME   record everything in between to NAME.gif
     tap BTN[+BTN] [H]   hold for H frames (default 3), then release, then 1 frame
     hold BTN[+BTN]      keep held until `release`
@@ -230,14 +229,15 @@ class Driver:
                 for _ in range(10000):
                     line = self.t.readline()
                     if line.startswith("HELD"):
-                        # The CPU is searching: game commands wait for it,
-                        # and in lockstep it needs frames to finish.
+                        # The stage is still showing something: game
+                        # commands wait for it, and in lockstep it needs
+                        # frames to finish.
                         self.t.send("N 5")
                         continue
                     if line.startswith("OK ") and line[3:].strip().isdigit():
                         self.t.send("N 5")         # a frame ack, still waiting
                         continue
-                    if line.startswith(("LAPS", "BENCH", "THINK", "RPROF")):
+                    if line.startswith(("BOARD", "RPROF")):
                         print(line)
                     if line.startswith("OK"):
                         break
@@ -249,24 +249,12 @@ class Driver:
                 self.cmd("L0")
                 time.sleep(float(args[0]))
                 self.cmd("L1")
-            elif op == "goto":
-                # Walk the glove to square N with D-pad presses (simulator: the
-                # game plans the route), W frames apart (default 8).
-                route = self.query(f"R {args[0]}", "ROUTE").split()[1:]
-                steps = route[0] if route else ""
-                if "?" in steps:
-                    raise SystemExit(f"no route to {args[0]}")
-                gap = int(args[1]) if len(args) > 1 else 8
-                for ch in steps:
-                    self.buttons(mask_of({"U": "UP", "D": "DOWN", "L": "LEFT", "R": "RIGHT"}[ch]))
-                    self.frames(3)
-                    self.buttons(0)
-                    self.frames(gap)
             elif op == "waitturn":
-                # (simulator) until the game waits for your move, then W more
-                # frames. CHECK! against you is answered with A after 90 frames.
+                # Until the game waits for your choice, then W more frames. A
+                # card or a banner held for a press is answered with A after
+                # 90 frames.
                 waited = 0
-                for _ in range(5000):
+                for _ in range(20000):
                     state = self.query("H", "BOARD").split()
                     if state[3] == "1":
                         break

@@ -307,7 +307,7 @@ static void testAuction() {
     CHECK_EQ(auc.leader, 2);
     st.pl[0].cash = 150;
     CHECK(!bid(0));                          // $160 is more than they have
-    CHECK_EQ(auc.timer, AUCTION_WINDOW);
+    CHECK_EQ(auc.timer, AUCTION_WINDOW);     // P2 could still answer
     runAuction();
     CHECK_EQ(owner(39), 2);
     CHECK_EQ(st.pl[2].cash, 1500 - 120);

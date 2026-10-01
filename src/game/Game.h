@@ -65,7 +65,7 @@ enum Act : uint8_t { ACT_ROLL, ACT_PAY, ACT_CARD, ACT_BUY, ACT_AUCTION, ACT_BUIL
 enum Over : uint8_t { BY_BANKRUPTCY, BY_CLOSING };
 
 enum Ev : uint8_t {
-    EV_START,       // a game began or was restored: redraw from the state
+    EV_START,       // a game began (a = 1: the deal follows) or was restored: redraw from the state
     EV_DEAL,        // a = player, b = tile: a deed dealt at the start
     EV_TURN,        // a = player, b = 1 if a human, c = doubles thrown so far this turn
     EV_PICK,        // the CPU chose: a = Act, b = tile (the glove presses the button a player would)
@@ -126,7 +126,7 @@ bool decline();                     // to auction
 // The auction. The price starts at nothing: the first bid leads at $0 and
 // each one after raises it a step. Every bid restarts the countdown; when it
 // runs out the lot goes to the leader (unbid, free to the next seat).
-enum : uint8_t { AUCTION_OPEN = 210, AUCTION_WINDOW = 150 };
+enum : uint8_t { AUCTION_OPEN = 210, AUCTION_WINDOW = 150, AUCTION_LAST = 50 };
 struct Auction {
     uint8_t tile, seller, leader;
     uint8_t started;                // the clock is running (it waits for the stage to open the lot)
