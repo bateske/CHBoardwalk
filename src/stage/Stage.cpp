@@ -85,8 +85,12 @@ static bool zoomDrawn = true;
 // The glove's tip, world, Q4.
 static int32_t gx16, gy16;
 
-static uint8_t hopFrames() { return mv.jump ? 30 : fast ? 4 : 7; }
-static uint8_t diceFrames() { return fast ? 14 : 30; }
+// A CPU's turn goes by at the QUICK pace: the show is for your own.
+static bool quick() { return fast || !humanTurn; }
+static uint8_t hopFrames() { return mv.jump ? 30 : quick() ? 4 : 7; }
+static uint8_t diceFrames() { return quick() ? 14 : 30; }
+
+static const uint8_t RM_CPU[16] = {0, 1, 2, 3, 4, 5, 6, 7, RED, WINE, 10, 11, 12, 13, 14, 15};   // a CPU's red-cuffed glove
 
 // ---------------------------------------------------------------------------
 // Geometry and the camera
@@ -266,7 +270,7 @@ static void onTurn(const Event &e) {
     closePopup();
     aucOn = false;
     if (!e.c) plT = 0;
-    if (!humanTurn) { holdT = fast ? 8 : 24; return; }
+    if (!humanTurn) { holdT = 10; return; }
     // Several humans: the handheld changes hands.
     uint8_t humans = 0;
     for (uint8_t p = 0; p < st.players; p++) humans += isHuman(p);
@@ -274,8 +278,8 @@ static void onTurn(const Event &e) {
         char name[10], *p = fmtStr(name, "PLAYER ");
         *p++ = (char)('1' + turn);
         *p = 0;
-        fx::banner(name, fx::B_GOLD, 40, 60);
-        fx::holdBanner(waitPress = true);
+        fx::banner(name, fx::B_GOLD, 40, 50);
+        holdT = 30;
     }
     lastHuman = turn;
     audio::sfx(Sfx::Turn);
@@ -303,19 +307,26 @@ static void onPay(const Event &e) {
     for (int i = 0; i < n; i++)
         fly(x0, y0, x1, y1, i * 4, i == n - 1 && e.b != BANK ? e.b : (uint8_t)NOBODY, amount);
     audio::sfx(e.a == BANK ? Sfx::Coin : Sfx::Pay);
+    if (e.c == R_JACKPOT) {
+        fx::banner("JACKPOT!", fx::B_RAINBOW, 40, 90);
+        fx::fountain(fx::COIN, CX, 90, 16);
+        audio::sfx(Sfx::Win);
+        audio::led(audio::LED_PARTY);
+        holdT = 60;
+    }
     if (e.c == R_RENT || e.c == R_TAX) {
         fmtMoney(fmtStr(buf, e.c == R_RENT ? "RENT " : "TAX "), amount);
         fx::banner(buf, fx::B_RED, 40, 50);
-        holdT = fast ? 16 : 40;
+        holdT = quick() ? 20 : 40;
     }
 }
 
-static void onLand(uint8_t t) {
+static void onLand(uint8_t t, int pot) {
     char name[28], tag[8];
     int x, y;
     focus = t;
     worldOf(t, x, y);
-    if (!fast) zoomTo = 10;
+    if (!quick()) zoomTo = 10;
     fx::burst(fx::DUST, toScreenX(x), toScreenY(y), 10, zoomed(24), t & 1 ? darkTile : lightTile);
     fx::shake(4, 1);
     audio::sfx(Sfx::Land);
@@ -328,9 +339,13 @@ static void onLand(uint8_t t) {
         if (o == BANK) fmtMoney(fmtStr(tag, " "), price(t));
         else { tag[0] = ' '; seatTag(tag + 1, o); c = SEAT_COLOUR[o]; }
     }
+    if (pot) fmtMoney(fmtStr(tag, " "), pot);
     say(name, WHITE, tag, c);
-    holdT = fast ? 4 : 14;
+    holdT = quick() ? 4 : 14;
 }
+
+// A seat's colour; the bank's is silver.
+static uint8_t colourOf(uint8_t p) { return p < SEATS ? SEAT_COLOUR[p] : SILVER; }
 
 // The plate: a deed and whose it is now.
 static void owned(uint8_t p, uint8_t t) {
@@ -338,7 +353,7 @@ static void owned(uint8_t p, uint8_t t) {
     text::tile(name, t);
     seatTag(tag, p)[0] = ' ';
     tag[3] = 0;
-    say(tag, SEAT_COLOUR[p], name, WHITE);
+    say(p < SEATS ? tag : "BANK ", colourOf(p), name, WHITE);
 }
 
 static void onEvent(const Event &e) {
@@ -352,15 +367,15 @@ static void onEvent(const Event &e) {
             fly(CX, CY, x, y, 0, NOBODY, 0);
             audio::sfx(Sfx::Flip);
             hudFlash[e.a] = 10;
-            holdT = fast ? 8 : 22;
+            holdT = fast ? 8 : 16;
             break;
         case EV_TURN: onTurn(e); break;
         case EV_PICK:
             pickAct = (uint8_t)(e.a + 1);
-            pickT = fast ? 10 : 26;
+            pickT = fast ? 10 : 18;
             holdT = pickT;
             tapT = 1;
-            if (e.a == ACT_BUILD || e.a == ACT_OFFER) focus = e.b;
+            if (e.a == ACT_BUILD) focus = e.b;
             audio::sfx(Sfx::Select);
             break;
         case EV_DICE:
@@ -379,14 +394,14 @@ static void onEvent(const Event &e) {
             plT = 0;
             closePopup();
             break;
-        case EV_LAND: onLand(e.b); break;
+        case EV_LAND: onLand(e.b, e.amount); break;
         case EV_OFFER: openPopup(POP_DEED, e.b, 0); break;
         case EV_BUY:
             sDeed[e.b] = e.a;
             owned(e.a, e.b);
             fx::burst(fx::STAR, 34, 50, 10, 30, SEAT_COLOUR[e.a]);
             audio::sfx(Sfx::Buy);
-            holdT = fast ? 14 : 34;
+            holdT = quick() ? 14 : 34;
             closeAfterHold = true;
             break;
         case EV_AUCTION:
@@ -404,7 +419,7 @@ static void onEvent(const Event &e) {
             sDeed[e.b] = e.a;
             owned(e.a, e.b);
             fx::banner(e.amount ? "SOLD!" : "FREE!", e.amount ? fx::B_GOLD : fx::B_CYAN, 60, 60);
-            fx::burst(fx::STAR, 96, 34, 12, 30, SEAT_COLOUR[e.a]);
+            fx::burst(fx::STAR, 96, 34, 12, 30, colourOf(e.a));
             fx::shake(6, 2);
             audio::sfx(Sfx::Gavel);
             holdT = fast ? 30 : 56;
@@ -414,7 +429,7 @@ static void onEvent(const Event &e) {
         case EV_CARD:
             openPopup(POP_CARD, e.a, e.b);
             if (humanTurn) waitPress = true;
-            else holdT = fast ? 40 : 90;
+            else holdT = fast ? 40 : 70;
             break;
         case EV_JAIL:
             fx::banner("GO TO JAIL", fx::B_RED, 40, 60);
@@ -434,7 +449,7 @@ static void onEvent(const Event &e) {
             worldOf(e.a, x, y);
             fx::burst(fx::DUST, toScreenX(x), toScreenY(y), 8, zoomed(20), WHITE);
             if (e.type == EV_BUILD) { growTile = e.a; growT = 1; audio::sfx(Sfx::Build); }
-            holdT = fast ? 6 : 16;
+            holdT = quick() ? 8 : 16;
             break;
         case EV_BANKRUPT:
             fx::banner("BANKRUPT!", fx::B_RED, 40, 110);
@@ -513,11 +528,11 @@ void update() {
         fx::shake(3, 1);
         fx::burst(fx::DUST, 96, 100, 8, 20, WHITE);
         audio::sfx(Sfx::Land);
-        holdT = fast ? 6 : 18;
+        holdT = quick() ? 8 : 18;
         if (diceDouble) {
             fx::banner("DOUBLES!", fx::B_CYAN, 40, 50);
             audio::sfx(Sfx::Doubles);
-            holdT = fast ? 16 : 36;
+            holdT = quick() ? 20 : 36;
         }
     }
 
@@ -573,7 +588,7 @@ void update() {
     // The glove glides to the deed being managed, or to the token whose
     // turn it is.
     int x, y;
-    if (manageTile >= 0 || (pickT && (pickAct == ACT_BUILD + 1 || pickAct == ACT_OFFER + 1))) {
+    if (manageTile >= 0 || (pickT && pickAct == ACT_BUILD + 1)) {
         worldOf(focus, x, y);
         y -= zoomed(4);
     } else {
@@ -665,11 +680,7 @@ static void drawGlove(uint32_t frame) {
     int x = toScreenX((int)(gx16 >> 4)), y = toScreenY((int)(gy16 >> 4));
     int bob = (fx::isin((int)(frame >> 3) * 40) * 2) >> 8;
     if (tapT) bob = (tapT < 6 ? tapT : 12 - tapT) / 2;
-    // The cuff in its player's colour.
-    uint8_t rm[16];
-    memcpy(rm, RM_ID, 16);
-    rm[GOLD] = rm[WOOD] = SEAT_COLOUR[turn];
-    sprite4(HAND, x - zoomed(HAND_TIP), y - zoomed(HAND[1]) + zoomed(bob) - 1, rm, zscale());
+    sprite4(HAND, x - zoomed(HAND_TIP), y - zoomed(HAND[1]) + zoomed(bob) - 1, humanTurn ? RM_ID : RM_CPU, zscale());
 }
 
 // ---------------------------------------------------------------------------
@@ -698,6 +709,11 @@ static void drawHud(uint32_t frame) {
         gfx_fillRect(x + 2, 2, 5, 5, hudFlash[p] & 2 ? WHITE : SEAT_COLOUR[p]);
         fmtMoney(buf, sCash[p]);
         text35(x + 9, 2, buf, hudFlash[p] & 2 ? SEAT_COLOUR[p] : lit ? FX_B : WHITE);
+    }
+    if (st.players < SEATS && phase() != P_OFF) {           // room for the round, and closing time
+        char buf[12], *p = fmtInt(fmtStr(buf, "R"), st.round);
+        if (st.roundCap) fmtInt(fmtStr(p, "/"), st.roundCap);
+        text35(127 - text35Width(buf), 2, buf, st.round == st.roundCap ? RED : SILVER);
     }
     if (waitPress && !holdT && (frame & 32)) {              // blinking
         plate("PRESS A", WHITE, "", 0, 100, 256);
@@ -770,16 +786,23 @@ static void drawAuction(uint32_t frame) {
         if (left < 50) { call = "GOING TWICE"; c = RED; }
     }
     text35(cx - text35Width(call) / 2, 47, call, c);
+    // The bidders: on a player's lot the bank's opening bid first, then
+    // everyone but the seller.
     uint8_t human = 0, row = 0;
-    for (uint8_t p = 0; p < st.players; p++) {
-        const char *tag = isHuman(p) ? TAP[human++] : " CPU";
-        if (p == auc.seller) continue;
+    for (uint8_t p = auc.seller == BANK ? 0 : NOBODY; p != st.players; p++) {
+        const char *tag = "";
+        if (p < SEATS) {
+            tag = isHuman(p) ? TAP[human++] : " CPU";
+            if (p == auc.seller) continue;
+        }
         int y = 57 + row++ * 11;
-        bool leads = p == auc.leader;
+        bool leads = p == auc.leader || (p == NOBODY && auc.leader == BANK);
         if (leads) fillRound(x + 3, y - 2, w - 6, 10, 2, frame & 8 ? GOLD : FX_B);
-        gfx_fillRect(x + 6, y, 5, 5, SEAT_COLOUR[p]);
-        fmtStr(seatTag(buf, p), leads ? " LEADS" : tag);
-        text35(x + 14, y, buf, leads ? INK : canBid(p) || !auc.started ? WHITE : SILVER);
+        gfx_fillRect(x + 6, y, 5, 5, colourOf(p));
+        if (p < SEATS) seatTag(buf, p);
+        else fmtStr(buf, "BANK");
+        fmtStr(buf + strlen(buf), leads ? " LEADS" : tag);
+        text35(x + 14, y, buf, leads ? INK : p >= SEATS || canBid(p) || !auc.started ? WHITE : SILVER);
     }
 }
 

@@ -8,7 +8,8 @@ streets round an isometric board, dice that tumble in and knock the table, a
 token that hops tile to tile with the camera after it and whips in close
 where it lands, deeds and cards that flip up like Blackjack's, coins arcing
 between the players' counters, and auctions against the clock where you tap
-to outbid the table.
+to outbid the table. It is the classic game played arcade style: made for
+one player against the CPU, or two on one handheld, and over in minutes.
 
 ![a turn](docs/turn.gif)
 
@@ -31,7 +32,7 @@ You need the Arduino IDE (2.x) or `arduino-cli`, and:
 3. **This repository**, in a folder named `CHBoardwalk`.
 
 Pick *Tools > Optimize > Smallest + LTO* and *Tools > USB > Upload only*
-(the game is 45.8 KB of the 50,944-byte application region that way). From
+(the game is 46.9 KB of the 50,944-byte application region that way). From
 the command line:
 
     arduino-cli compile -b CHGame:ch32v:CHGame:opt=oslto,rtlib=nano,periph=game,usb=uploadonly CHBoardwalk
@@ -41,8 +42,10 @@ the command line:
 
 ## Playing
 
-Two to four players, each a person (pass the handheld) or a CPU: EASY, FAIR
-or SHARK. THE TABLE sets the seats and closing time.
+1 PLAYER is you against a CPU; 2 PLAYERS is the two of you, passing the
+handheld. Either way THE TABLE comes up set and A deals; it can seat up to
+four, each a person or a CPU (EASY, FAIR or SHARK), and sets closing time.
+A CPU's turn goes by quickly: the show is for your own.
 
 | Button | |
 |---|---|
@@ -53,7 +56,7 @@ or SHARK. THE TABLE sets the seats and closing time.
 
 **The rules** are the ones you know, in the short game's shape:
 
-* Everyone starts with $1500 and a few deeds, dealt free: three each with
+* Everyone starts with $1500 and a few deeds, dealt free: four each with
   two players, two each with more.
 * Roll, move, collect $200 passing GO. Doubles roll again; three running go
   to jail. In jail, pay $50, play a card, or roll for doubles (the third
@@ -61,23 +64,28 @@ or SHARK. THE TABLE sets the seats and closing time.
 * Land on an unowned deed and BUY it at its price, or send it to AUCTION.
   Land on someone's and pay the rent on its card; a full colour set doubles
   the bare rent, railroads pay by how many, utilities by the dice.
-* With a full set, MANAGE builds houses, evenly, and a hotel after four.
-* **There is no trading. There are auctions.** The price starts at nothing:
-  the first tap leads at $0 and each tap after raises it a step. Every bid
-  restarts the clock - GOING ONCE, GOING TWICE - and when it runs out the
-  lot is SOLD to whoever leads. It always sells, even for $0: unbid, it
-  goes free to the next seat. Several people on one handheld each get a
-  button: the first taps **A**, the second the **D-pad**, then **B**, then
-  **SELECT**.
+* Hold **most of a colour group** - two of its three streets, or both of a
+  pair - and MANAGE builds houses on what you hold, evenly, and a hotel
+  after four. (With no trading and only two at the table, full sets would
+  be rare; this way the houses come.)
+* **There is no trading. There are auctions.** A deed the lander turns down
+  starts at nothing: the first tap leads at $0 and each tap after raises
+  it a step. Every bid restarts the clock - GOING ONCE, GOING TWICE - and
+  when it runs out the lot is SOLD to whoever leads (unbid, it goes free to
+  the next seat). Several people on one handheld each get a button: the
+  first taps **A**, the second the **D-pad**, then **B**, then **SELECT**.
 * From MANAGE you can put a deed of your own up for auction (A, then
-  confirm): the others bid, the money is yours. It is the only way a deed
-  changes hands, and the way to raise cash.
+  confirm). The bank opens at half its price, so that is the least you
+  get; the others can tap past it. It is the only way a deed changes hands,
+  and the way to raise cash.
 * A debt you cannot pay is settled for you: houses go back at half price,
   then your deeds go to auction, strays first. If that is still not
   enough, you are bankrupt.
+* **The jackpot:** taxes, fines and bail pile up on Free Parking, and go to
+  whoever lands there.
 * The game ends at the **first bankruptcy**, or at **closing time** (10 to
-  60 rounds, set at the table). The richest player left - cash, deeds at
-  their price, buildings at cost - wins.
+  60 rounds, set at the table; 20 to begin with). The richest player left -
+  cash, deeds at their price, buildings at cost - wins.
 
 MANAGE: LEFT / RIGHT walk your deeds, UP builds a house, DOWN sells one back
 at half price, A auctions the deed, B goes back.
@@ -98,10 +106,13 @@ flash and survive re-uploading.
   zoom step. The ring is two cells deep: a tile is one cell along its side
   and two into the board, with its colour band on the inside edge and its
   owner's colour along the rim. Pink and orange are dithered from the
-  sixteen colours the three games share.
+  sixteen colours the three games share. The name lies across the felt on
+  the board's long diagonal - level on screen - between the two decks, and
+  stacks of chips stand about on the carpet.
 * **Sprites** are span-encoded and drawn through a palette remap and a
   scale: the same art at the resting size and doubled when the camera
-  whips in; one glove with each player's colour on its cuff.
+  whips in; CHChess's pointing glove, gold-cuffed for you and red for a
+  CPU.
 * **Text** is built, not stored: tile names share their endings, and each
   card's wording comes from its effect.
 

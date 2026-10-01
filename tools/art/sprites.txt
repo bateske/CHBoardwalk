@@ -90,6 +90,19 @@ kkwwwwkkkkwwwwkk
 ....kkwwwwkk....
 ......kkkk......
 
+# --- A stack of chips on the carpet (RED is remapped for the other stacks).
+@CHIPS
+..kkkkkk..
+.krrrrrrk.
+krrwwwwrrk
+krrrrrrrrk
+kkrrrrrrkk
+kwkkkkkkwk
+krrwrrwrrk
+kkrrrrrrkk
+kwrrwwrrwk
+.kkkkkkkk.
+
 # --- A die with no pips (they are drawn on top, turning with it).
 @DIE
 .kkkkkkkkkkk.
@@ -106,13 +119,18 @@ kwwwwwwwwwwsk
 ksssssssssssk
 .kkkkkkkkkkk.
 
-# --- Decals on the special tiles (flat, centred).
+# --- Decals on the special tiles (flat, centred). ICON_JAIL with its SKIN
+# turned RED is Go To Jail.
 @ICON_GO
-..r....
-.rr....
-rrrrrrr
-.rr....
-..r....
+.rrrr..rrrr.
+rr....rr..rr
+rr.rr.rr..rr
+rr..r.rr..rr
+.rrrr..rrrr.
+............
+..k.........
+.kkkkkkkkkkk
+..k.........
 
 @ICON_CHANCE
 .rrr.
@@ -160,36 +178,40 @@ uuuuu
 .uuu.
 
 @ICON_JAIL
-k.k.k.k
-k.k.k.k
-k.k.k.k
-k.k.k.k
-k.k.k.k
+kkkkkkkkkkkkk
+kpkppkppkppkk
+kpkppkppkppkk
+kpkppkppkppkk
+kpkppkppkppkk
+kpkppkppkppkk
+kpkppkppkppkk
+kkkkkkkkkkkkk
 
 @ICON_PARKING
-rrr.
-r..r
-rrr.
-r...
-r...
+....kkkkkk....
+...kcckcckk...
+.kkrrrrrrrrkk.
+krrrrrrrrrrrrk
+kkkkrrrrrrkkkk
+.kkk......kkk.
 
-# --- The pointing glove (yours; a CPU's is remapped: cuff GOLD -> RED,
+# --- The pointing glove, CHChess's (a CPU's is remapped: cuff GOLD -> RED,
 # WOOD -> WINE): thumb on the left, the index finger pointing down.
-# Fingertip: bottom row, centre column. From CHChess.
+# Fingertip: bottom row, centre column.
 @HAND
-..kkkkkkkkk..
-..kyyyyyyyk..
-..kbyyyyybk..
-..kkkkkkkkk..
-.kwwwwwwwwwk.
-.kwwwwwwwwsk.
-kwkwwwwwwwwsk
-kwwkwwwkkkksk
-.kwwwwwkwwwsk
-..kwwwwkkkksk
-..kkwwwkwwsk.
-....kwwskkk..
-....kwwsk....
-....kwwsk....
-....kwwsk....
-.....kkk.....
+...kkkkkkkkk.
+..kyyyyyyyyyk
+..kbyyyyyyybk
+..kkkkkkkkkk.
+.kwwwwwwwwwsk
+.kwwwwkwkwwsk
+kwwswwkwkwwsk
+kwwswwswswwsk
+.kskwwwwwwwsk
+.kskwwswswssk
+..kkwwsssssk.
+...kwwskkkk..
+...kwwsk.....
+...kwwsk.....
+...kwwsk.....
+....kkk......

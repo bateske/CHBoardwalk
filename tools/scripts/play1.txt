@@ -1,10 +1,10 @@
-# A first game: you and two CPUs. Roll, buy what comes up, watch the others.
+# A first game: the title, 1 PLAYER, the table, then you against the CPU.
 wait 40
 snap title
 tap A
 wait 30
-snap setup
-say G 1 3 3 0 30 42
+snap table
+say G 1 3 0 0 20 42
 wait 4
 snap deal_start
 wait 60

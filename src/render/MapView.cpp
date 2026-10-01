@@ -85,6 +85,8 @@ void draw(uint32_t frame) {
     char buf[24], *q = fmtInt(fmtStr(buf, "ROUND "), st.round);
     if (st.roundCap) fmtInt(fmtStr(q, " OF "), st.roundCap);
     text35(64 - text35Width(buf) / 2, Y0 + CW + 3, buf, GOLD);
+    fmtMoney(fmtStr(buf, "JACKPOT "), st.pot);
+    text35(64 - text35Width(buf) / 2, BOTTOM - 8, buf, FX_B);
     text35(X0 + CW + 14, Y0 + CW + 12, "CASH", FELT_LT);
     text35(RIGHT - 3 - text35Width("WORTH"), Y0 + CW + 12, "WORTH", FELT_LT);
     for (uint8_t p = 0; p < st.players; p++) {

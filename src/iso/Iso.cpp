@@ -49,15 +49,17 @@ void worldOf(uint8_t t, int &x, int &y) { place(t, corner(t) ? 8 : 4, 8, x, y); 
 static inline int halfWidth(int k, int th) { return k < (th >> 1) ? 2 * k + 1 : 2 * (th - 1 - k) + 1; }   // th > 0
 
 // A diamond `cells` cells a side with its top corner at screen (x0, y0);
-// with a trim colour, a line `in` px inside its edge too.
+// with a trim colour, a darker edge and a line `in` px inside it too.
 static void diamond(int x0, int y0, int cells, uint8_t c, int in = 0, uint8_t trim = 0) {
     int rows = cells * 2 * hh();
     for (int k = 0; k < rows; k++) {
         int y = y0 + k;
         if ((unsigned)y >= GFX_H) continue;
         int w = halfWidth(k, rows);
-        gfx_hline(x0 - w, y, 2 * w, c);
-        if (!in || k < in || k >= rows - in) continue;
+        if (!in) { gfx_hline(x0 - w, y, 2 * w, c); continue; }
+        gfx_hline(x0 - w, y, 2 * w, FELT_DK);               // the edge: 2 px left showing each end
+        gfx_hline(x0 - w + 2, y, 2 * w - 4, c);
+        if (k < in || k >= rows - in) continue;
         w -= 2 * in;
         if (w <= 2) { gfx_hline(x0 - w, y, 2 * w, trim); continue; }
         gfx_hline(x0 - w, y, 2, trim);
@@ -74,19 +76,21 @@ static bool cellAt(int u, int v, int &cx, int &top) {
 
 // A strip d px across along one edge of a cell (0 upper right, 1 lower
 // right, 2 lower left, 3 upper left): the diamond's rows cut off parallel
-// to that edge. d = 0: the whole cell. With c2 != c, dithered.
-static void strip(int u, int v, uint8_t edge, int d, uint8_t c, uint8_t c2) {
+// to that edge. d = 0: the whole cell. With c2 != c, dithered. ruled: an
+// ink line along the strip's inside edge.
+static void strip(int u, int v, uint8_t edge, int d, uint8_t c, uint8_t c2, bool ruled = false) {
     int cx, top, th = 2 * hh();
     if (!cellAt(u, v, cx, top)) return;
     for (int k = 0; k < th; k++) {
         int y = top + k;
         if ((unsigned)y >= GFX_H) continue;
-        int w = halfWidth(k, th), a = cx - w, b = cx + w;
+        int w = halfWidth(k, th), a = cx - w, b = cx + w, rule = 0;
         if (d) {
             int up = 2 * k + 1, dn = 2 * (th - 1 - k) + 1;  // how far the upper and the lower edges reach on this row
             int e = (edge == 0 || edge == 3 ? up : dn) - d;
-            if (edge < 2) { if (cx + e > a) a = cx + e; }
-            else          { if (cx - e < b) b = cx - e; }
+            if (edge < 2) { if (cx + e > a) { a = cx + e; rule = a - 2; } }
+            else          { if (cx - e < b) { b = cx - e; rule = b; } }
+            if (ruled && rule) gfx_hline(rule, y, 2, INK);
             if (a >= b) continue;
         }
         if (c2 != 0xFF) gfx_hline(a, y, b - a, c);
@@ -131,8 +135,7 @@ void groupColour(uint8_t g, uint8_t &c, uint8_t &c2) {
     if (g == 3) { c = RED; c2 = GOLD; }         // orange
 }
 
-static const uint8_t RM_RED[16] = {RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED};
-
+static const uint8_t RM_GOTO[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, RED, 13, 14, 15};      // the cell, in red
 static const uint8_t RM_CHEST[16] = {0, 1, 2, 3, 4, 5, 6, 7, BLUE, 9, 10, 11, 12, 13, 14, 15};
 
 // A sprite centred on a world point, at scale s.
@@ -152,7 +155,7 @@ const uint8_t *decalOf(uint8_t t, const uint8_t *&remap) {
         case CHEST:   return ICON_CHEST;
         case TAX:     return ICON_TAX;
         case PARKING: return ICON_PARKING;
-        case GOTOJAIL: remap = RM_RED;      // the bars, in red
+        case GOTOJAIL: remap = RM_GOTO;
         default:      return ICON_JAIL;
     }
 }
@@ -160,7 +163,41 @@ const uint8_t *decalOf(uint8_t t, const uint8_t *&remap) {
 // ---------------------------------------------------------------------------
 // Table and board
 // ---------------------------------------------------------------------------
-void drawTable() { gfx_clear(NAVY); }
+// The carpet, and the stacks of chips standing about on it (lattice
+// positions, in eighths of a cell).
+void drawTable() {
+    static const int8_t AT[6][2] = {{36, 122}, {122, 36}, {74, 124}, {124, 74}, {-18, 40}, {40, -18}};
+    static const uint8_t COLOUR[6] = {RED, BLUE, FELT_LT, INK, GOLD, RED};
+    gfx_clear(NAVY);
+    uint8_t rm[16];
+    memcpy(rm, RM_ID, 16);
+    for (int i = 0; i < 6; i++) {
+        rm[RED] = COLOUR[i];
+        centred(CHIPS, (AT[i][0] - AT[i][1]) * hw() / 8, (AT[i][0] + AT[i][1]) * hh() / 8, rm, zscale());
+    }
+}
+
+// The name across the felt, on a plaque: its letters lie on the board's
+// long diagonal, so on screen they are level, and squat.
+static void wordmark() {
+    static const char NAME[] = "BOARDWALK";
+    int cx = toScreenX(0), cy = toScreenY(N * hh());
+    int pw = zoomed(117), ph = zoomed(18);
+    if (cy + ph < 10 || cy - ph >= GFX_H) return;
+    fillRound(cx - pw / 2, cy - ph / 2, pw, ph, 2, NAVY);
+    roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 2, GOLD);
+    int x0 = cx - zoomed(105) / 2, y0 = cy - zoomed(10) / 2;
+    for (int k = 0; NAME[k]; k++) {
+        const uint8_t *g = FONT35[glyph35(NAME[k])];
+        for (int i = 0; i < 15; i++) {
+            int col = i / 5, row = i % 5;
+            if (!(g[col] >> row & 1)) continue;
+            int a = zoomed((k * 4 + col) * 3), ya = zoomed(row * 2);
+            // The top row shimmers with the palette.
+            gfx_fillRect(x0 + a, y0 + ya, zoomed((k * 4 + col + 1) * 3) - a, zoomed(row * 2 + 2) - ya, row ? GOLD : FX_B);
+        }
+    }
+}
 
 // The two slab faces below the near edges, row by row: the face's top
 // boundary is exactly the tiles' edge staircase. left: the edge from the
@@ -215,9 +252,10 @@ void drawBoard() {
     // inlay, then every other tile in the darker one: neighbours differ.
     diamond(xb, yf, N, lightTile);
     diamond(xb, yf + 2 * R * hh(), N - 2 * R, FELT, zoomed(3), GOLD);
-    // The two decks on the felt, each under its sign.
+    wordmark();
+    // The two decks on the felt either side of it, each under its sign.
     for (int d = 0; d < 2; d++) {
-        int x = (d ? 3 : -3) * hw(), y = N * hh();
+        int x = (d ? 2 : -2) * hw(), y = (d ? N + 5 : N - 5) * hh();
         centred(CARD_DECK, x, y, d ? RM_CHEST : RM_ID, zscale());
         centred(d ? ICON_CHEST : ICON_CHANCE, x, y - zoomed(9), RM_ID, zscale());
     }
@@ -227,15 +265,15 @@ void drawBoard() {
         const uint8_t *rm, *icon = decalOf(t, rm);
         int x, y;
         if (icon) {
-            // Flat, centred on the tile (twice the size on a corner).
+            // Flat, centred on the tile.
             worldOf(t, x, y);
-            centred(icon, x, y, rm, corner(t) ? 2 * zscale() : zscale());
+            centred(icon, x, y, rm, zscale());
         } else {
             // A street's colour band, along its inside edge.
             uint8_t c, c2;
             groupColour(group(t), c, c2);
             edgeCell(t, true, x, y);
-            strip(x, y, side(t), zoomed(8), c, c2);
+            strip(x, y, side(t), zoomed(8), c, c2, true);
         }
     }
 }

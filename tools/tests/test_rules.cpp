@@ -66,7 +66,7 @@ static void runAuction() {
 
 // A two-human game with nothing dealt: a clean board to set up on.
 static void fresh(uint8_t players = 2, uint8_t kind = HUMAN, uint8_t cap = 0) {
-    Setup s = {{kind, kind, (uint8_t)(players > 2 ? kind : OFF), (uint8_t)(players > 3 ? kind : OFF)}, cap, 12345};
+    Setup s = {{kind, kind, (uint8_t)(players > 2 ? kind : OFF), (uint8_t)(players > 3 ? kind : OFF)}, cap, 12345, 0};
     start(s);
     evlog.clear();
     run();
@@ -111,15 +111,15 @@ static void testTables() {
 
 static void testDeal() {
     for (uint8_t n = 2; n <= 4; n++) {
-        Setup s = {{HUMAN, HUMAN, (uint8_t)(n > 2 ? HUMAN : OFF), (uint8_t)(n > 3 ? HUMAN : OFF)}, 30, 99};
+        Setup s = {{HUMAN, HUMAN, (uint8_t)(n > 2 ? HUMAN : OFF), (uint8_t)(n > 3 ? HUMAN : OFF)}, 30, 99, 0};
         start(s);
         evlog.clear();
         run();
         CHECK_EQ(st.players, n);
-        CHECK_EQ(count(EV_DEAL), n == 2 ? 6 : 2 * n);
+        CHECK_EQ(count(EV_DEAL), n == 2 ? 8 : 2 * n);
         int owned[SEATS] = {0, 0, 0, 0};
         for (uint8_t t = 0; t < TILES; t++) if (owner(t) != BANK) { CHECK(isDeed(t)); owned[owner(t)]++; }
-        for (uint8_t p = 0; p < n; p++) { CHECK_EQ(owned[p], n == 2 ? 3 : 2); CHECK_EQ(st.pl[p].cash, 1500); }
+        for (uint8_t p = 0; p < n; p++) { CHECK_EQ(owned[p], n == 2 ? 4 : 2); CHECK_EQ(st.pl[p].cash, 1500); }
         CHECK(humanToAct());
         CHECK_EQ(st.cur, 0);
     }
@@ -184,6 +184,15 @@ static void testTax() {
     st.pl[1].pos = 35;
     throwDice(1, 2);                         // Luxury Tax
     CHECK_EQ(st.pl[1].cash, 1400);
+    // Taxes, fines and bail pile up on Free Parking, for whoever lands there.
+    CHECK_EQ(st.pot, 300);
+    st.pl[0].pos = JAIL_TILE; st.pl[0].jail = 1;
+    CHECK(payJail());
+    CHECK_EQ(st.pot, 350);
+    throwDice(4, 6);                         // from Jail to Free Parking
+    CHECK_EQ(st.pl[0].cash, 1300 - 50 + 350);
+    CHECK_EQ(st.pot, 0);
+    CHECK_EQ(last(EV_LAND)->amount, 350);
 }
 
 static void testDoublesAndJail() {
@@ -251,14 +260,18 @@ static void testDoublesAndJail() {
 
 static void testBuild() {
     fresh();
-    give(6, 0); give(8, 0);
-    CHECK(!canBuild(6));                     // not the full set
-    give(9, 0);
-    CHECK(canBuild(6));
+    give(6, 0);
+    CHECK(!canBuild(6));                     // one of the three: not yet
+    give(8, 0);
+    CHECK(canBuild(6));                      // most of the group
     CHECK(build(6));
     CHECK_EQ(st.pl[0].cash, 1450);
-    CHECK(!canBuild(6));                     // evenly
-    CHECK(build(8)); CHECK(build(9));
+    CHECK(!canBuild(6));                     // evenly, over what you hold
+    CHECK(build(8));
+    CHECK(!canBuild(9));                     // not yours
+    give(9, 0);                              // the third joins them, bare
+    CHECK(canBuild(9) && !canBuild(6));
+    CHECK(build(9));
     CHECK(canBuild(6));
     CHECK(!canOffer(8));                     // not with buildings on the group
     CHECK(!canSell(1));
@@ -274,6 +287,13 @@ static void testBuild() {
     give(9, 0, 4);
     CHECK(!canBuild(9));                     // cannot afford it
     CHECK(!build(1));                        // not yours
+    cashIs(0, 1000);
+    give(37, 0);
+    CHECK(!canBuild(37));                    // a pair takes both
+    give(39, 1);
+    CHECK(!majority(0, 7) && !majority(1, 7));
+    give(39, 0);
+    CHECK(canBuild(39));
 }
 
 static void testAuction() {
@@ -317,14 +337,25 @@ static void testAuction() {
     CHECK(!canOffer(3));
     CHECK(offer(39));
     run(); update(false);
+    CHECK_EQ(auc.leader, BANK);              // the bank opens at half its price
+    CHECK_EQ(auc.price, 200);
     CHECK(!bid(2));                          // the seller sits it out
-    CHECK(bid(1)); CHECK(bid(0)); CHECK(bid(1));
+    CHECK(bid(1));
+    CHECK(!bid(0));                          // $280 is more than they have
+    CHECK_EQ(auc.price, 240);
     runAuction();
     CHECK_EQ(owner(39), 1);
-    CHECK_EQ(st.pl[2].cash, 1500 - 120 + 80);
-    CHECK_EQ(st.pl[1].cash, 1500 - 80);
+    CHECK_EQ(st.pl[2].cash, 1500 - 120 + 240);
+    CHECK_EQ(st.pl[1].cash, 1500 - 240);
     CHECK_EQ(st.cur, 2);                     // still their turn, before the roll
     CHECK_EQ(phase(), P_PREROLL);
+    // Nobody goes higher: the bank keeps it, at half.
+    give(1, 2);
+    CHECK(offer(1));
+    run();
+    runAuction();
+    CHECK_EQ(owner(1), BANK);
+    CHECK_EQ(st.pl[2].cash, 1500 - 120 + 240 + 30);
     // Not enough to buy: straight to auction.
     fresh();
     st.pl[0].cash = 30;
@@ -344,7 +375,7 @@ static void testAuction() {
 static void testCpuBids() {
     // Two CPUs and a human who declines: the CPUs bid each other up, never
     // past what they have, and the lot always sells.
-    Setup s = {{HUMAN, CPU + 1, CPU + 2, OFF}, 0, 7};
+    Setup s = {{HUMAN, CPU + 1, CPU + 2, OFF}, 0, 7, 0};
     start(s);
     evlog.clear();
     run();
@@ -379,16 +410,18 @@ static void testDebt() {
     CHECK_EQ(auc.seller, 0);
     update(false);
     CHECK(!bid(0));
-    CHECK(bid(1));
+    CHECK(bid(1));                           // $120, over the bank's $100
     runAuction();
     CHECK_EQ(owner(5), 1);
     for (int i = 0; i < 3; i++) { CHECK_EQ(phase(), P_AUCTION); runAuction(); }
+    CHECK_EQ(owner(6), BANK);                // the set went to the bank at half price
     CHECK_EQ(phase(), P_OVER);
     CHECK(st.pl[0].flags & F_BUST);
     CHECK_EQ(st.pl[0].cash, 0);
     CHECK_EQ(st.winner, 1);
     CHECK_EQ(st.over, BY_BANKRUPTCY + 1);
-    CHECK_EQ(st.pl[1].cash, 1500 + 100 + 150);       // what there was: the cash and the houses
+    // What there was: the cash, the houses, the railroad and the set.
+    CHECK_EQ(st.pl[1].cash, 1500 - 120 + 100 + 150 + 120 + 160);
     for (int p = 0; p < 2; p++) CHECK_EQ(book[p], st.pl[p].cash);
     // A debt covered by a house: play goes on.
     fresh();
@@ -520,11 +553,9 @@ static void invariants() {
         CHECK(o == BANK || o < st.players);
         CHECK(l <= 5);
         if (!isDeed(t)) { CHECK(o == BANK && !l); continue; }
-        if (l) {
-            CHECK(type(t) == STREET && ownsGroup(o, group(t)));
-            uint8_t tiles[4], n = groupTiles(group(t), tiles);
-            for (uint8_t i = 0; i < n; i++) CHECK(level(tiles[i]) + 1 >= l && level(tiles[i]) <= l + 1);
-        }
+        // Houses only where their owner holds most of the group. (Levels may
+        // be uneven: a bare street can join built ones.)
+        if (l) CHECK(type(t) == STREET && majority(o, group(t)));
     }
 }
 
@@ -577,7 +608,7 @@ static uint32_t playGame(const Setup &s, GameStats *gs, uint32_t stopAtTick = 0,
         for (uint8_t g = 0; g < 8; g++) {
             uint8_t tiles[4];
             groupTiles(g, tiles);
-            gs->sets += owner(tiles[0]) != BANK && ownsGroup(owner(tiles[0]), g);
+            for (uint8_t p = 0; p < st.players; p++) gs->sets += majority(p, g);
         }
         for (uint8_t t = 0; t < TILES; t++) gs->houses += level(t);
     }
@@ -601,13 +632,13 @@ static void testFuzz(int games) {
         if (failures != before) { printf("  (game %d)\n", g); break; }
     }
     // The same seed and the same presses: the same game.
-    Setup s = {{HUMAN, CPU + 2, CPU, HUMAN}, 30, 4242};
+    Setup s = {{HUMAN, CPU + 2, CPU, HUMAN}, 30, 4242, 0};
     fz = 77; uint32_t a = playGame(s, nullptr);
     fz = 77; uint32_t b = playGame(s, nullptr);
     CHECK_EQ(a, b);
     // A saved game: restored at the start of a turn, the all-CPU game plays
     // out exactly as it would have.
-    Setup c = {{CPU + 1, CPU + 2, CPU, OFF}, 40, 9001};
+    Setup c = {{CPU + 1, CPU + 2, CPU, OFF}, 40, 9001, 0};
     playGame(c, nullptr);
     State end1 = st;
     State snap;
@@ -621,16 +652,18 @@ static void testFuzz(int games) {
     CHECK(memcmp(&end1, &st, sizeof st) == 0);
 }
 
+static int dealOverride;
+
 // How games go, by seats and closing time: what the CPU numbers are tuned on.
 static void table(int games) {
     printf("\nAll-CPU games (levels mixed), %d per row\n", games);
-    printf("seats cap | bust%%  rounds(avg)  sets  houses | auctions  free%%  sold/list%%  bids/auction\n");
+    printf("seats cap | bust%%  rounds(avg)  groups  houses | auctions  free%%  sold/list%%  bids/auction\n");
     for (uint8_t n = 2; n <= 4; n++)
-        for (uint8_t cap : {20, 30, 40, 60}) {
+        for (uint8_t cap : {10, 20, 30, 40}) {
             GameStats t = {};
             int busts = 0;
             for (int g = 0; g < games; g++) {
-                Setup s = {{0, 0, 0, 0}, cap, (uint32_t)(g * 7919u + n * 131u + cap)};
+                Setup s = {{0, 0, 0, 0}, cap, (uint32_t)(g * 7919u + n * 131u + cap), (uint8_t)dealOverride};
                 for (uint8_t k = 0; k < n; k++) s.kind[k] = (uint8_t)(CPU + (g + k) % LEVELS);
                 GameStats gs = {};
                 playGame(s, &gs);
@@ -647,6 +680,7 @@ static void table(int games) {
 
 int main(int argc, char **argv) {
     bool quick = argc > 1 && !strcmp(argv[1], "quick");
+    if (argc > 2) dealOverride = atoi(argv[2]);         // tuning: deeds dealt to each player
     testTables();
     testDeal();
     testMoveAndGo();

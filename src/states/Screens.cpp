@@ -78,6 +78,7 @@ static void enter(Scr s) {
         stage::setZoom(10);
         audio::sfx(Sfx::Title);
     }
+    if (s == Scr::Setup) sel = 5;                // on BEGIN: the table is set, A deals
     if (s == Scr::Play) {
         overlay = NONE;
         statsCounted = managing = false;
@@ -149,13 +150,14 @@ static uint32_t seedNow() { return micros() * 2654435761u ^ arduboy.frameCount; 
 // ---------------------------------------------------------------------------
 // Title: a dealt table, the camera cruising round the board.
 // ---------------------------------------------------------------------------
-enum Item : uint8_t { I_NEW, I_CONTINUE, I_OPTIONS };
-static const char *const ITEM[3] = {"NEW GAME", "CONTINUE", "OPTIONS"};
+enum Item : uint8_t { I_ONE, I_TWO, I_CONTINUE, I_OPTIONS };
+static const char *const ITEM[4] = {"1 PLAYER", "2 PLAYERS", "CONTINUE", "OPTIONS"};
 
 static uint8_t titleItems(uint8_t *items) {
     uint8_t n = 0;
     if (hasGame) items[n++] = I_CONTINUE;
-    items[n++] = I_NEW;
+    items[n++] = I_ONE;
+    items[n++] = I_TWO;
 #if !CHBW_LEAN
     items[n++] = I_OPTIONS;
 #endif
@@ -163,12 +165,20 @@ static uint8_t titleItems(uint8_t *items) {
 }
 
 static void titleUpdate() {
-    uint8_t items[3], n = titleItems(items);
+    uint8_t items[4], n = titleItems(items);
     if (sel >= n) sel = 0;
     if (menuNav(n)) {
         audio::sfx(Sfx::Select);
         switch (items[sel]) {
-            case I_NEW: go(Scr::Setup); break;
+            case I_ONE: case I_TWO:
+                // You against the CPU, or the two of you; the table keeps
+                // any CPUs it had beyond that, and can be changed.
+                opt.seat[0] = HUMAN;
+                if (items[sel] == I_TWO) opt.seat[1] = HUMAN;
+                else if (opt.seat[1] < CPU) opt.seat[1] = CPU + 1;
+                for (uint8_t i = 2; i < SEATS; i++) if (opt.seat[i] == HUMAN) opt.seat[i] = OFF;
+                go(Scr::Setup);
+                break;
             case I_CONTINUE:
                 // Continuing takes the game out of the save.
                 if (!save::loadGame()) audio::sfx(Sfx::Deny);
@@ -194,7 +204,7 @@ static void titleRender(uint32_t frame) {
     stage::renderScene(frame);
     dither(0, 0, 128, 30, INK, 0);
     title35("BOARDWALK", 6);
-    uint8_t items[3], n = titleItems(items);
+    uint8_t items[4], n = titleItems(items);
     int y0 = 128 - n * 14 - 1;
     dither(0, y0 - 5, 128, 128 - y0 + 5, INK, 1);
     for (uint8_t i = 0; i < n; i++) menuItem(y0 + i * 14, ITEM[items[i]], i == sel, frame);
@@ -435,7 +445,7 @@ static void playUpdate() {
     showBar = false;
     if (overlay == NONE || overlay == CONFIRM) {
         if (pick) {
-            static const uint8_t ACT_BTN[7] = {B_ROLL, B_PAY, B_CARD, B_BUY, B_AUCTION, B_MANAGE, B_MANAGE};
+            static const uint8_t ACT_BTN[6] = {B_ROLL, B_PAY, B_CARD, B_BUY, B_AUCTION, B_MANAGE};
             pressed = ACT_BTN[pick - 1];
             barFor(pressed == B_BUY || pressed == B_AUCTION, pressed);
             showBar = true;
@@ -531,7 +541,7 @@ static void playRender(uint32_t frame) {
     } else if (overlay == CONFIRM) {
         panel(76, 30);
         centred35(80, "AUCTION IT OFF?", FX_B);
-        centred35(88, "IT SELLS, EVEN FOR $0", WHITE);
+        centred35(88, "THE BANK BIDS HALF PRICE", WHITE);
         centred35(97, "A: YES   B: NO", GOLD);
     } else if (overlay == RESULT) {
         drawResult(frame);
@@ -717,10 +727,10 @@ static bool settling(char cmd) {
 void begin() {
     stage::begin();
     opt.sound = 1;
-    opt.seat[0] = HUMAN; opt.seat[1] = opt.seat[2] = CPU + 1;
-    opt.rounds = 3;
+    opt.seat[0] = HUMAN; opt.seat[1] = CPU + 1;
+    opt.rounds = 2;
     save::load(opt, stats, hasGame);
-    if (!opt.rounds || opt.rounds > 6) opt.rounds = 3;
+    if (!opt.rounds || opt.rounds > 6) opt.rounds = 2;
     applyOptions();
 #if CHBW_DEBUG
     dbg::hook = debugHook;

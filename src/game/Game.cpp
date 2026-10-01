@@ -15,9 +15,10 @@ static uint8_t ph;                          // Phase
 static uint8_t afterSettle, afterAuction;   // where a payment and an auction hand back to
 static uint8_t steps, rolled;               // the move to make; the dice just thrown
 static bool special;                        // sent by a card to the nearest railroad or utility: its rent rule
-static bool offered;                        // a CPU puts up one deed a turn at most
 static uint8_t cardDeck, cardIdx;           // the card on show
 static State mark;                          // the game as the turn began
+
+static const uint8_t DEAL2 = 4;
 
 // Payments a player owes, settled in order (a card can ask three players).
 struct Due { uint8_t from, to, reason; int16_t amount; };
@@ -93,21 +94,30 @@ static uint8_t held(uint8_t t, uint8_t &n) {
     return have;
 }
 
-bool ownsGroup(uint8_t p, uint8_t g) {
-    uint8_t tiles[4], n = groupTiles(g, tiles);
-    for (uint8_t i = 0; i < n; i++) if (owner(tiles[i]) != p) return false;
-    return true;
-}
-
-// The fewest and the most houses on a group's streets.
-static void levels(uint8_t g, uint8_t &lo, uint8_t &hi) {
-    uint8_t tiles[4], n = groupTiles(g, tiles);
+// How many of a group's tiles p holds; and the fewest and the most houses
+// on those.
+static uint8_t holds(uint8_t p, uint8_t g, uint8_t &n, uint8_t &lo, uint8_t &hi) {
+    uint8_t tiles[4], have = 0;
+    n = groupTiles(g, tiles);
     lo = 5; hi = 0;
     for (uint8_t i = 0; i < n; i++) {
+        if (owner(tiles[i]) != p) continue;
         uint8_t l = level(tiles[i]);
+        have++;
         if (l < lo) lo = l;
         if (l > hi) hi = l;
     }
+    return have;
+}
+
+bool ownsGroup(uint8_t p, uint8_t g) {
+    uint8_t n, lo, hi;
+    return holds(p, g, n, lo, hi) == n;
+}
+
+bool majority(uint8_t p, uint8_t g) {
+    uint8_t n, lo, hi;
+    return 2 * holds(p, g, n, lo, hi) > n;
 }
 
 int rent(uint8_t t, uint8_t roll) {
@@ -136,6 +146,7 @@ static void pay(uint8_t from, uint8_t to, int amount, uint8_t reason) {
     if (amount <= 0) return;
     if (from != BANK) st.pl[from].cash -= amount;
     if (to != BANK) st.pl[to].cash += amount;
+    else if (reason == R_TAX || reason == R_CARD || reason == R_JAIL) st.pot = (uint16_t)(st.pot + amount);
     push(EV_PAY, from, to, reason, amount);
 }
 
@@ -175,26 +186,42 @@ static void sellOne(uint8_t t) {
 // ---------------------------------------------------------------------------
 // The auction
 // ---------------------------------------------------------------------------
+static int nextBid() { return auc.leader == NOBODY ? 0 : auc.price + auc.step; }
+
+// Who could answer the bid that stands? Each CPU that could takes a moment
+// over it: quick while the lot is cheap to it, slower as it nears what it
+// would pay, longest at its last. False: nobody could.
+static bool answers() {
+    bool open = false;
+    for (uint8_t o = 0; o < st.players; o++) {
+        if (o == auc.leader || o == auc.seller || nextBid() > st.pl[o].cash) continue;
+        if (isHuman(o)) { open = true; continue; }
+        if (nextBid() > auc.limit[o]) continue;
+        open = true;
+        auc.wait[o] = (uint8_t)(2 * nextBid() < auc.limit[o] ? 6 + rnd() % 10 : 14 + rnd() % 40);
+        if (nextBid() + auc.step > auc.limit[o]) auc.wait[o] = (uint8_t)(auc.wait[o] + 30);
+    }
+    return open;
+}
+
 static void startAuction(uint8_t t, uint8_t seller, uint8_t next) {
     memset(&auc, 0, sizeof auc);
     auc.tile = t;
     auc.seller = seller;
     auc.leader = NOBODY;
-    auc.timer = AUCTION_OPEN;
     // A tenth of the list price a bid, to the nearest $10.
     auc.step = (uint8_t)((price(t) + 50) / 100 * 10);
     if (auc.step < 10) auc.step = 10;
-    for (uint8_t p = 0; p < st.players; p++) {
-        if (!isCpu(p) || p == seller) continue;
-        auc.limit[p] = (int16_t)cpu::valuation(p, t);
-        auc.wait[p] = (uint8_t)(20 + rnd() % 40);
-    }
+    // A player's deed never goes for nothing: the bank opens at half its
+    // price, and keeps it if nobody goes higher.
+    if (seller != BANK) { auc.leader = BANK; auc.price = (int16_t)(price(t) / 2); }
+    for (uint8_t p = 0; p < st.players; p++)
+        if (isCpu(p) && p != seller) auc.limit[p] = (int16_t)cpu::valuation(p, t);
+    auc.timer = answers() ? AUCTION_OPEN : AUCTION_LAST;
     afterAuction = next;
     ph = P_AUCTION;
     push(EV_AUCTION, t, seller);
 }
-
-static int nextBid() { return auc.leader == NOBODY ? 0 : auc.price + auc.step; }
 
 bool canBid(uint8_t p) {
     return ph == P_AUCTION && auc.started && p < st.players && p != auc.seller && p != auc.leader &&
@@ -205,29 +232,18 @@ bool bid(uint8_t p) {
     if (!canBid(p)) return false;
     auc.price = (int16_t)nextBid();
     auc.leader = p;
-    // The others take a moment to answer: quick while the lot is cheap to
-    // them, slower as it nears what they would pay, longest at their last.
     // With nobody left who could answer, the gavel comes down early.
-    bool open = false;
-    for (uint8_t o = 0; o < st.players; o++) {
-        if (o == p || o == auc.seller || nextBid() > st.pl[o].cash) continue;
-        if (isHuman(o)) { open = true; continue; }
-        if (nextBid() > auc.limit[o]) continue;
-        open = true;
-        auc.wait[o] = (uint8_t)(2 * nextBid() < auc.limit[o] ? 6 + rnd() % 10 : 14 + rnd() % 40);
-        if (nextBid() + auc.step > auc.limit[o]) auc.wait[o] = (uint8_t)(auc.wait[o] + 30);
-    }
-    auc.timer = open ? AUCTION_WINDOW : AUCTION_LAST;
+    auc.timer = answers() ? AUCTION_WINDOW : AUCTION_LAST;
     push(EV_BID, p, 0, 0, auc.price);
     return true;
 }
 
 static void closeAuction() {
     uint8_t w = auc.leader;
-    // Nobody bid: it goes free to the next seat after the one who put it up
-    // (the lander, for the bank's).
-    if (w == NOBODY) w = (uint8_t)(((auc.seller == BANK ? st.cur : auc.seller) + 1) % st.players);
-    st.deed[auc.tile] = w;
+    // The bank's own lot, and nobody bid: it goes free to the next seat
+    // after the lander.
+    if (w == NOBODY) w = (uint8_t)((st.cur + 1) % st.players);
+    st.deed[auc.tile] = w;                              // (the bank, if its opening bid stood)
     push(EV_SOLD, w, auc.tile, auc.seller, auc.price);
     pay(w, auc.seller, auc.price, R_AUCTION);
     ph = afterAuction;
@@ -290,9 +306,13 @@ static uint8_t draw(uint8_t d) {
 
 static void resolve() {
     uint8_t p = st.cur, t = st.pl[p].pos;
-    push(EV_LAND, p, t);
+    push(EV_LAND, p, t, 0, type(t) == PARKING ? st.pot : 0);
     ph = P_ENDTURN;
     switch (type(t)) {
+        case PARKING:                                   // the jackpot
+            pay(BANK, p, st.pot, R_JACKPOT);
+            st.pot = 0;
+            break;
         case STREET: case RAIL: case UTIL: {
             uint8_t o = owner(t);
             if (o == BANK) {
@@ -370,7 +390,7 @@ static void settle() {
     for (uint8_t t = 0; t < TILES; t++) {
         if (!isDeed(t) || owner(t) != d.from) continue;
         if (level(t) && (house < 0 || level(t) > level((uint8_t)house))) house = t;
-        int s = price(t) + (ownsGroup(d.from, group(t)) ? 1000 : 0);
+        int s = price(t) + (majority(d.from, group(t)) ? 1000 : 0);
         if (deed < 0 || s < deedScore) { deed = t; deedScore = s; }
     }
     if (house >= 0) { sellOne((uint8_t)house); return; }
@@ -431,11 +451,12 @@ bool useJailCard() {
     return true;
 }
 
+// With most of a colour group you can build on what you hold of it, evenly.
 bool canBuild(uint8_t t) {
-    uint8_t lo, hi;
-    if (ph != P_PREROLL || type(t) != STREET || owner(t) != st.cur || !ownsGroup(st.cur, group(t))) return false;
-    levels(group(t), lo, hi);
-    return level(t) < 5 && level(t) == lo && st.pl[st.cur].cash >= houseCost(t);    // evenly
+    uint8_t n, lo, hi;
+    if (ph != P_PREROLL || type(t) != STREET || owner(t) != st.cur) return false;
+    return 2 * holds(st.cur, group(t), n, lo, hi) > n && level(t) < 5 && level(t) == lo &&
+           st.pl[st.cur].cash >= houseCost(t);
 }
 
 bool build(uint8_t t) {
@@ -447,9 +468,9 @@ bool build(uint8_t t) {
 }
 
 bool canSell(uint8_t t) {
-    uint8_t lo, hi;
+    uint8_t n, lo, hi;
     if (ph != P_PREROLL || type(t) != STREET || owner(t) != st.cur || !level(t)) return false;
-    levels(group(t), lo, hi);
+    holds(st.cur, group(t), n, lo, hi);
     return level(t) == hi;
 }
 
@@ -460,10 +481,10 @@ bool sell(uint8_t t) {
 }
 
 bool canOffer(uint8_t t) {
-    uint8_t lo, hi;
+    uint8_t n, lo, hi;
     if (ph != P_PREROLL || !isDeed(t) || owner(t) != st.cur) return false;
-    levels(group(t), lo, hi);
-    return !hi;                                         // no buildings on its group
+    holds(st.cur, group(t), n, lo, hi);
+    return !hi;                                         // no buildings on what you hold of its group
 }
 
 bool offer(uint8_t t) {
@@ -504,12 +525,6 @@ static void cpuPreroll() {
     }
     int t = cpu::pickBuild(p);
     if (t >= 0) { push(EV_PICK, ACT_BUILD, (uint8_t)t); build((uint8_t)t); return; }
-    if (!offered && (t = cpu::pickOffer(p)) >= 0) {
-        offered = true;
-        push(EV_PICK, ACT_OFFER, (uint8_t)t);
-        offer((uint8_t)t);
-        return;
-    }
     push(EV_PICK, ACT_ROLL);
     roll();
 }
@@ -525,7 +540,6 @@ static void cpuOffer() {
 // ---------------------------------------------------------------------------
 static void beginTurn() {
     mark = st;
-    offered = false;
     push(EV_TURN, st.cur, isHuman(st.cur), 0);
     ph = P_PREROLL;
 }
@@ -564,12 +578,12 @@ void start(const Setup &s) {
     qHead = qCount = nDue = 0;
     special = false;
     push(EV_START, 1);
-    // The deal: three deeds each for two players, two each for more.
+    // The deal: DEAL2 deeds each for two players, two each for more.
     uint8_t deeds[28], n = 0;
     for (uint8_t t = 0; t < TILES; t++) if (isDeed(t)) deeds[n++] = t;
     shuffle(deeds, n);
     n = 0;
-    for (uint8_t i = st.players == 2 ? 3 : 2; i; i--)
+    for (uint8_t i = s.deal ? s.deal : st.players == 2 ? DEAL2 : 2; i; i--)
         for (uint8_t p = 0; p < st.players; p++) {
             st.deed[deeds[n]] = p;
             push(EV_DEAL, p, deeds[n++]);
