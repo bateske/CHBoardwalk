@@ -140,11 +140,21 @@ static void centred(const uint8_t *spr, int x, int y, const uint8_t *remap, int 
     sprite4(spr, toScreenX(x) - ((spr[0] * s) >> 9), toScreenY(y) - ((spr[1] * s) >> 9), remap, s);
 }
 
-// A flat decal centred on the tile (twice the size on a corner).
-static void decal(uint8_t t, const uint8_t *spr, const uint8_t *remap) {
-    int x, y;
-    worldOf(t, x, y);
-    centred(spr, x, y, remap, corner(t) ? 2 * zscale() : zscale());
+const uint8_t *decalOf(uint8_t t, const uint8_t *&remap) {
+    using namespace board;
+    remap = RM_ID;
+    switch (type(t)) {
+        case STREET:  return nullptr;
+        case GO:      return ICON_GO;
+        case RAIL:    return ICON_RAIL;
+        case UTIL:    return t < 20 ? ICON_BULB : ICON_WATER;
+        case CHANCE:  return ICON_CHANCE;
+        case CHEST:   return ICON_CHEST;
+        case TAX:     return ICON_TAX;
+        case PARKING: return ICON_PARKING;
+        case GOTOJAIL: remap = RM_RED;      // the bars, in red
+        default:      return ICON_JAIL;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -214,27 +224,19 @@ void drawBoard() {
 
     for (uint8_t t = 0; t < TILES; t++) {
         if (t & 1) cells(t, darkTile, darkTile);
-        const uint8_t *icon = nullptr, *rm = RM_ID;
-        switch (type(t)) {
-            case STREET: {
-                uint8_t c, c2;
-                int u, v;
-                groupColour(group(t), c, c2);
-                edgeCell(t, true, u, v);
-                strip(u, v, side(t), zoomed(8), c, c2);         // along its inside edge
-                break;
-            }
-            case GO:       icon = ICON_GO; break;
-            case RAIL:     icon = ICON_RAIL; break;
-            case UTIL:     icon = t < 20 ? ICON_BULB : ICON_WATER; break;
-            case CHANCE:   icon = ICON_CHANCE; break;
-            case CHEST:    icon = ICON_CHEST; break;
-            case TAX:      icon = ICON_TAX; break;
-            case JAIL:     icon = ICON_JAIL; break;
-            case PARKING:  icon = ICON_PARKING; break;
-            default:       icon = ICON_JAIL; rm = RM_RED; break;     // Go To Jail
+        const uint8_t *rm, *icon = decalOf(t, rm);
+        int x, y;
+        if (icon) {
+            // Flat, centred on the tile (twice the size on a corner).
+            worldOf(t, x, y);
+            centred(icon, x, y, rm, corner(t) ? 2 * zscale() : zscale());
+        } else {
+            // A street's colour band, along its inside edge.
+            uint8_t c, c2;
+            groupColour(group(t), c, c2);
+            edgeCell(t, true, x, y);
+            strip(x, y, side(t), zoomed(8), c, c2);
         }
-        if (icon) decal(t, icon, rm);
     }
 }
 

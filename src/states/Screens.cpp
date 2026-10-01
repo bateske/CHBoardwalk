@@ -15,6 +15,7 @@
 #include "../game/Game.h"
 #include "../stage/Stage.h"
 #include "../render/MapView.h"
+#include "../assets/Assets.h"
 #include "../save/Save.h"
 #include "../debug/Debug.h"
 #ifdef CHSIM
@@ -244,16 +245,15 @@ static void setupRender(uint32_t frame) {
     for (uint8_t i = 0; i < 5; i++) {
         int y = 32 + i * 13;
         bool on = sel == i;
-        if (on) fillRound(12, y - 3, 104, 15, 3, NAVY);
+        if (on) fillRound(10, y - 3, 108, 15, 3, NAVY);
         if (i < 4) {
-            gfx_fillRect(18, y + 1, 7, 7, INK);
-            gfx_fillRect(19, y + 2, 5, 5, stage::SEAT_COLOUR[i]);
+            if (opt.seat[i]) sprite4(TOKEN[i], 14, y - 1, RM_ID);
             fmtStr(buf, SEAT[opt.seat[i]]);
         } else {
             fmtStr(fmtInt(buf, opt.rounds * 10), " ROUNDS");
         }
-        text35x2(32, y, buf, on ? GOLD : (i < 4 && !opt.seat[i]) ? FELT_LT : WHITE);
-        if (on) arrows(y + 3, 32, 32 + text35x2Width(buf), frame);
+        text35x2(37, y, buf, on ? GOLD : (i < 4 && !opt.seat[i]) ? FELT_LT : WHITE);
+        if (on) arrows(y + 3, 37, 37 + text35x2Width(buf), frame);
     }
     menuItem(104, "BEGIN", sel == 5, frame);
 }

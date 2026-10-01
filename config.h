@@ -20,12 +20,10 @@
 #endif
 #endif
 
-// Device debug builds carry the ~2 KB protocol, so they leave out things the
-// tests never need (saving, the options screen and its credits). The
-// simulator (not flash-bound) and release builds keep everything.
-#if CHBW_DEBUG && !defined(CHSIM) && !defined(CHBW_FULL)
-#define CHBW_LEAN        1
-#else
+// A build that leaves out saving and the options screen (about 2 KB), should
+// a device debug build - which carries the ~2 KB protocol - ever stop
+// fitting. Today both fit with everything in.
+#ifndef CHBW_LEAN
 #define CHBW_LEAN        0
 #endif
 

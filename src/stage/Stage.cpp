@@ -240,7 +240,11 @@ static void sync(bool fresh) {
     lookAt(st.pl[st.cur].pos);
 }
 
-void reset() { sync(false); }
+void reset() {
+    sync(false);
+    humanTurn = isHuman(turn);
+    glove = phase() == P_PREROLL;
+}
 
 static void closePopup() { if (popKind) popClosing = true; }
 
@@ -248,6 +252,7 @@ static void openPopup(uint8_t kind, uint8_t a, uint8_t b) {
     if (popKind == kind && popA == a && !popClosing) return;        // already up
     popKind = kind; popA = a; popB = b; popT = 0;
     popClosing = closeAfterHold = false;
+    diceT = 0;                                   // the dice have had their say
     audio::sfx(Sfx::Flip);
 }
 
@@ -274,6 +279,7 @@ static void onTurn(const Event &e) {
     }
     lastHuman = turn;
     audio::sfx(Sfx::Turn);
+    audio::led(audio::LED_BLINK);
 }
 
 static void onPay(const Event &e) {
@@ -326,17 +332,22 @@ static void onLand(uint8_t t) {
     holdT = fast ? 4 : 14;
 }
 
+// The plate: a deed and whose it is now.
+static void owned(uint8_t p, uint8_t t) {
+    char name[28], tag[4];
+    text::tile(name, t);
+    seatTag(tag, p)[0] = ' ';
+    tag[3] = 0;
+    say(tag, SEAT_COLOUR[p], name, WHITE);
+}
+
 static void onEvent(const Event &e) {
-    char buf[28], tag[4];
     int x, y;
     switch (e.type) {
         case EV_START: sync(e.a != 0); break;
         case EV_DEAL:
             sDeed[e.b] = e.a;
-            text::tile(buf, e.b);
-            seatTag(tag, e.a)[0] = ' ';
-            tag[3] = 0;
-            say(tag, SEAT_COLOUR[e.a], buf, WHITE);
+            owned(e.a, e.b);
             spot(e.a, x, y);
             fly(CX, CY, x, y, 0, NOBODY, 0);
             audio::sfx(Sfx::Flip);
@@ -372,6 +383,7 @@ static void onEvent(const Event &e) {
         case EV_OFFER: openPopup(POP_DEED, e.b, 0); break;
         case EV_BUY:
             sDeed[e.b] = e.a;
+            owned(e.a, e.b);
             fx::burst(fx::STAR, 34, 50, 10, 30, SEAT_COLOUR[e.a]);
             audio::sfx(Sfx::Buy);
             holdT = fast ? 14 : 34;
@@ -390,10 +402,7 @@ static void onEvent(const Event &e) {
             break;
         case EV_SOLD:
             sDeed[e.b] = e.a;
-            text::tile(buf, e.b);
-            seatTag(tag, e.a)[0] = ' ';
-            tag[3] = 0;
-            say(tag, SEAT_COLOUR[e.a], buf, WHITE);
+            owned(e.a, e.b);
             fx::banner(e.amount ? "SOLD!" : "FREE!", e.amount ? fx::B_GOLD : fx::B_CYAN, 60, 60);
             fx::burst(fx::STAR, 96, 34, 12, 30, SEAT_COLOUR[e.a]);
             fx::shake(6, 2);

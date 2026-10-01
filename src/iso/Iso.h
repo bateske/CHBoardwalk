@@ -56,6 +56,10 @@ void drawBoard();                           // slab, tiles, colour bands, decals
 void tileTint(uint8_t tile, uint8_t c, bool solid = false);
 void rim(uint8_t tile, uint8_t c);          // a strip of colour along its outside edge: the owner's
 
+// A special tile's decal (span4) and the remap it is drawn through;
+// nullptr for a deed's tile... but for the railroads and utilities.
+const uint8_t *decalOf(uint8_t tile, const uint8_t *&remap);
+
 // A street group's colour: c, and c2 if it is dithered (else the same).
 void groupColour(uint8_t group, uint8_t &c, uint8_t &c2);
 

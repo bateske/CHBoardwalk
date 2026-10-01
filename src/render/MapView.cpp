@@ -7,6 +7,7 @@
 #include "../game/Game.h"
 #include "../iso/Iso.h"
 #include "../stage/Stage.h"
+#include "../assets/Assets.h"
 
 namespace mapview {
 
@@ -50,18 +51,20 @@ void draw(uint32_t frame) {
         int x, y, w, h;
         box(t, x, y, w, h);
         gfx_fillRect(x, y, w, h, t & 1 ? SILVER : WHITE);
+        const uint8_t *rm, *icon = iso::decalOf(t, rm);
+        if (icon) sprite4(icon, x + (w - icon[0]) / 2, y + (h - icon[1]) / 2, rm);
         if (!isDeed(t)) continue;
         if (type(t) == STREET) {
             uint8_t c, c2;
             iso::groupColour(group(t), c, c2);
-            edge(t, true, 3, x, y, w, h);
+            edge(t, true, 4, x, y, w, h);
             gfx_fillRect(x, y, w, h, c);
             if (c2 != c) dither(x, y, w, h, c2, 0);
             // Houses: a dot each along the band; a hotel fills it.
             uint8_t lv = level(t);
             for (uint8_t i = 0; i < (lv == 5 ? 4 : lv); i++) {
-                if (w > h) gfx_fillRect(x + 1 + i * 2, y + 1, lv == 5 ? 2 : 1, 1, INK);
-                else       gfx_fillRect(x + 1, y + i * 2, 1, lv == 5 ? 2 : 1, INK);
+                if (w > h) gfx_fillRect(x + 1 + i * 2, y + 1, lv == 5 ? 2 : 1, 2, INK);
+                else       gfx_fillRect(x + 1, y + i * 2, 2, lv == 5 ? 2 : 1, INK);
             }
         }
         if (owner(t) != BANK) {
