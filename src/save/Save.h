@@ -26,10 +26,14 @@ struct Stats {
 
 namespace save {
 
+enum Game : uint8_t { NO_GAME, THIS_GAME, SAVED_GAME };
+
 bool available();                   // false: image too big, or a write failed
 bool load(Options &o, Stats &s, bool &hasGame);
 bool loadGame();                    // the saved game, as its turn began
-// Call after gfx_wait(): the page is built in CHGfx's chunk scratch.
-bool store(const Options &o, const Stats &s, bool withGame);
+// With no game, the game being played (as its turn began), or the game
+// already saved kept as it is. Call after gfx_wait(): the page is built in
+// CHGfx's chunk scratch.
+bool store(const Options &o, const Stats &s, Game game);
 
 }  // namespace save

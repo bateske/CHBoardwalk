@@ -14,7 +14,7 @@ namespace save {
 bool available() { return false; }
 bool load(Options &, Stats &, bool &hasGame) { hasGame = false; return false; }
 bool loadGame() { return false; }
-bool store(const Options &, const Stats &, bool) { return false; }
+bool store(const Options &, const Stats &, Game) { return false; }
 #else
 static const uint32_t MAGIC = 0x57424843u;       // "CHBW"
 static const uint8_t VERSION = 1;
@@ -144,18 +144,21 @@ bool loadGame() {
     return r && r->hasGame && game::restore(r->game);
 }
 
-bool store(const Options &o, const Stats &s, bool withGame) {
+bool store(const Options &o, const Stats &s, Game game) {
     if (!available()) return false;
+    const Record *old = best();
     uint8_t *buf = gfx_chunkScratch();          // idle between gfx_wait() and the next flush
     memset(buf, 0xFF, PAGE);
     Record &rec = *(Record *)buf;
+    bool withGame = game == THIS_GAME;
+    if (game == SAVED_GAME && old && old->hasGame) { rec.game = old->game; withGame = true; game = NO_GAME; }
     rec.magic = MAGIC;
     rec.version = VERSION;
     rec.seq = (uint16_t)(lastSeq + 1);
     rec.opt = o;
     rec.stats = s;
     rec.hasGame = withGame ? 1 : 0;
-    if (withGame) rec.game = game::checkpoint();
+    if (game == THIS_GAME) rec.game = game::checkpoint();
     rec.crc = crc32(buf, (uint32_t)(sizeof rec - 4));
     uint32_t addr = ((rec.seq & 1) || !twoPages()) ? PAGE_B : PAGE_A;   // alternate pages
     if (!writePage(addr, buf)) { broken = true; return false; }

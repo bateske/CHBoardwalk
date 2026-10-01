@@ -9,7 +9,7 @@ extern const uint8_t TOKEN_CROWN[53];
 extern const uint8_t TOKEN_DIE[66];
 extern const uint8_t HOUSE[24];
 extern const uint8_t HOTEL[40];
-extern const uint8_t PEG[18];
+extern const uint8_t CARD_DECK[54];
 extern const uint8_t DIE[62];
 extern const uint8_t ICON_GO[16];
 extern const uint8_t ICON_CHANCE[19];

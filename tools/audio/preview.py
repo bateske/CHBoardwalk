@@ -1,4 +1,4 @@
-"""Render CHChess's sound effects to WAV on the PC, from the real code.
+"""Render BOARDWALK's sound effects to WAV on the PC, from the real code.
 
     python tools/audio/preview.py OUTDIR [--src DIR]
 
@@ -19,8 +19,8 @@ sys.path.insert(0, str(HERE.parent / "chsim"))
 from chsim import find_cxx  # noqa: E402
 
 # Must match enum class Sfx in src/audio/Audio.h.
-SFX = ["cursor", "select", "deny", "land", "hop", "capture", "coin", "check", "castle", "promote",
-       "whoosh", "flip", "mate", "win", "lose", "draw", "turn", "title", "tick", "tock"]
+SFX = ["cursor", "select", "deny", "dice", "land", "hop", "coin", "pay", "buy", "gavel", "flip", "jail",
+       "build", "doubles", "whoosh", "win", "lose", "turn", "title", "tick", "tock"]
 
 
 def build(src, out):

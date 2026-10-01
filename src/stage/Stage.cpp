@@ -116,9 +116,15 @@ static void aimAt(int x, int y, uint8_t shift) {
     aimX = (int16_t)x; aimY = (int16_t)y; aimShift = shift;
 }
 
+// A tile; at rest, with the stretch of board ahead of it in view (where
+// the dice might take you).
 static void aimTile(uint8_t t, uint8_t shift) {
-    int x, y;
+    int x, y, ax, ay;
     worldOf(t, x, y);
+    if (zoomTo == 5 && !cardLeft() && !aucOn && !over) {
+        worldOf((uint8_t)((t + 4) % TILES), ax, ay);
+        x = (x + ax) / 2; y = (y + ay) / 2;
+    }
     aimAt(x, y - zoomed(4), shift);
 }
 
@@ -359,6 +365,7 @@ static void onEvent(const Event &e) {
             mv.dir = (int8_t)(e.amount < 0 ? -1 : 1);
             sPos[e.a] = NOBODY;
             zoomTo = 5;
+            plT = 0;
             closePopup();
             break;
         case EV_LAND: onLand(e.b); break;
@@ -425,6 +432,7 @@ static void onEvent(const Event &e) {
             fx::shake(10, 2);
             audio::sfx(Sfx::Lose);
             topSeat = e.a; topT = 1;
+            plT = diceT = 0;
             focus = sPos[e.a] == NOBODY ? st.pl[e.a].pos : sPos[e.a];
             zoomTo = fast ? 5 : 10;
             holdT = 110;

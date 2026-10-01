@@ -84,10 +84,12 @@ static void enter(Scr s) {
     }
 }
 
-static void persist(bool withGame) {
+// Options and records are saved as they change; the game only when you
+// SAVE + QUIT (a game already saved stays until it is continued).
+static void persist(bool thisGame = false) {
     gfx_wait();                      // save builds its page in the chunk scratch
-    save::store(opt, stats, withGame);
-    hasGame = withGame;
+    save::store(opt, stats, thisGame ? save::THIS_GAME : hasGame ? save::SAVED_GAME : save::NO_GAME);
+    hasGame |= thisGame;
 }
 
 static void applyOptions() {
@@ -167,8 +169,11 @@ static void titleUpdate() {
         switch (items[sel]) {
             case I_NEW: go(Scr::Setup); break;
             case I_CONTINUE:
-                if (save::loadGame()) go(Scr::Play);
-                else { hasGame = false; audio::sfx(Sfx::Deny); }
+                // Continuing takes the game out of the save.
+                if (!save::loadGame()) audio::sfx(Sfx::Deny);
+                else go(Scr::Play);
+                hasGame = false;
+                persist();
                 break;
 #if !CHBW_LEAN
             case I_OPTIONS: optBack = Scr::Title; go(Scr::Options); break;
@@ -221,7 +226,7 @@ static void setupUpdate() {
     if (d && sel == 4) { opt.rounds = (uint8_t)((opt.rounds + 5 + d) % 6 + 1); audio::sfx(Sfx::Coin); }
     if (arduboy.justPressed(A_BUTTON)) {
         if (sel < 5) { sel++; audio::sfx(Sfx::Cursor); }
-        else { audio::sfx(Sfx::Select); persist(false); newGame(); }
+        else { audio::sfx(Sfx::Select); persist(); newGame(); }
     }
     if (arduboy.justPressed(B_BUTTON)) { audio::sfx(Sfx::Select); go(Scr::Title); }
 }
@@ -374,7 +379,7 @@ static void pauseInput() {
 #if !CHBW_LEAN
         if (a == A_OPTIONS) { optBack = Scr::Play; go(Scr::Options); }
 #endif
-        if (a == A_QUIT) { persist(active()); go(Scr::Title); }
+        if (a == A_QUIT) { hasGame = false; persist(active()); go(Scr::Title); }
         return;
     }
     if (arduboy.justPressed(B_BUTTON)) overlay = NONE;
@@ -388,7 +393,7 @@ static void countResult() {
     if (st.over == BY_BANKRUPTCY + 1) stats.busts++;
     int32_t w = netWorth(st.winner);
     if (w > stats.best) stats.best = w;
-    persist(false);
+    persist();
 }
 
 static void playUpdate() {
@@ -567,7 +572,7 @@ static void optionsUpdate() {
     }
     if ((arduboy.justPressed(A_BUTTON) && sel == O_BACK) || arduboy.justPressed(B_BUTTON)) {
         audio::sfx(Sfx::Select);
-        persist(hasGame);
+        persist();
         go(optBack);
     }
 }

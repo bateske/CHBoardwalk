@@ -57,8 +57,7 @@ kkgwgkfwfkk
 ..kkgkfkk..
 ....kkk....
 
-# --- Buildings, and the peg that marks a deed's owner (RED is remapped to
-# the owner's colour).
+# --- Buildings.
 @HOUSE
 ..k..
 .kgk.
@@ -77,13 +76,19 @@ kmmmmmk
 kmwmwmk
 kkkkkkk
 
-@PEG
-kk..
-krrk
-krrk
-kkk.
-k...
-k...
+# --- A deck of cards on the felt (GOLD is its back: the Community Chest's
+# is the same art in BLUE).
+@CARD_DECK
+......kkkk......
+....kkyyyykk....
+..kkyyyyyyyykk..
+kkyyyyyyyyyyyykk
+kwkkyyyyyyyykkwk
+kwwwkkyyyykkwwwk
+kkwwwwkkkkwwwwkk
+..kkwwwwwwwwkk..
+....kkwwwwkk....
+......kkkk......
 
 # --- A die with no pips (they are drawn on top, turning with it).
 @DIE

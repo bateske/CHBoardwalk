@@ -133,11 +133,18 @@ void groupColour(uint8_t g, uint8_t &c, uint8_t &c2) {
 
 static const uint8_t RM_RED[16] = {RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED, RED};
 
+static const uint8_t RM_CHEST[16] = {0, 1, 2, 3, 4, 5, 6, 7, BLUE, 9, 10, 11, 12, 13, 14, 15};
+
+// A sprite centred on a world point, at scale s.
+static void centred(const uint8_t *spr, int x, int y, const uint8_t *remap, int s) {
+    sprite4(spr, toScreenX(x) - ((spr[0] * s) >> 9), toScreenY(y) - ((spr[1] * s) >> 9), remap, s);
+}
+
 // A flat decal centred on the tile (twice the size on a corner).
 static void decal(uint8_t t, const uint8_t *spr, const uint8_t *remap) {
-    int x, y, s = corner(t) ? 2 * zscale() : zscale();
+    int x, y;
     worldOf(t, x, y);
-    sprite4(spr, toScreenX(x) - ((spr[0] * s) >> 9), toScreenY(y) - ((spr[1] * s) >> 9), remap, s);
+    centred(spr, x, y, remap, corner(t) ? 2 * zscale() : zscale());
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +205,12 @@ void drawBoard() {
     // inlay, then every other tile in the darker one: neighbours differ.
     diamond(xb, yf, N, lightTile);
     diamond(xb, yf + 2 * R * hh(), N - 2 * R, FELT, zoomed(3), GOLD);
+    // The two decks on the felt, each under its sign.
+    for (int d = 0; d < 2; d++) {
+        int x = (d ? 3 : -3) * hw(), y = N * hh();
+        centred(CARD_DECK, x, y, d ? RM_CHEST : RM_ID, zscale());
+        centred(d ? ICON_CHEST : ICON_CHANCE, x, y - zoomed(9), RM_ID, zscale());
+    }
 
     for (uint8_t t = 0; t < TILES; t++) {
         if (t & 1) cells(t, darkTile, darkTile);

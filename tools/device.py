@@ -1,4 +1,4 @@
-"""Build, upload and drive CHChess on the attached CHGame.
+"""Build, upload and drive BOARDWALK on the attached CHGame.
 
     python tools/device.py build [--debug]         compile (release by default)
     python tools/device.py upload [--debug]        compile + upload
