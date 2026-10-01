@@ -136,7 +136,7 @@ void groupColour(uint8_t g, uint8_t &c, uint8_t &c2) {
     if (g == 3) { c = RED; c2 = GOLD; }         // orange
 }
 
-static const uint8_t RM_GOTO[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, RED, 13, 14, 15};      // the cell, in red
+static const uint8_t RM_GOTO[16] = {0, 1, 2, 3, 4, RED, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};     // the cell (SILVER), in red
 static const uint8_t RM_CHEST[16] = {0, 1, 2, 3, 4, 5, 6, 7, BLUE, 9, 10, 11, 12, 13, 14, 15};
 
 // A sprite centred on a world point, at scale s.
@@ -195,8 +195,7 @@ static void wordmark() {
         for (int i = 0; i < LOGO_W; i++) {
             int a = i;
             while (i < LOGO_W && (row[i >> 3] & (0x80 >> (i & 7)))) i++;
-            // The top rows shimmer with the palette.
-            if (i > a) gfx_fillRect(x0 + zoomed(a), y, zoomed(i) - zoomed(a), h, j < 2 ? FX_B : GOLD);
+            if (i > a) gfx_fillRect(x0 + zoomed(a), y, zoomed(i) - zoomed(a), h, GOLD);
         }
     }
 }

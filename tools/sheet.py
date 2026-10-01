@@ -24,8 +24,8 @@ What the game expects of each:
             Community Chest's deck is the same art with GOLD turned BLUE.
   DIE       a die with no pips: the game draws them on top, turning with it.
             Keep it 13 x 13.
-  ICON_*    flat decals on the special tiles, centred (twice the size on the
-            corners). ICON_JAIL in red is Go To Jail.
+  ICON_*    flat decals on the special tiles, centred. ICON_JAIL with its
+            SILVER turned RED is Go To Jail.
   HAND      the glove; a CPU's has GOLD and WOOD (the cuff) turned RED and
             WINE. The fingertip is the middle of the bottom row.
   LOGO      the title's lettering, in any one colour (only its shape is

@@ -124,7 +124,7 @@ kwwwwwwwwwwsk
 ksssssssssssk
 .kkkkkkkkkkk.
 
-# --- Decals on the special tiles (flat, centred). ICON_JAIL with its SKIN
+# --- Decals on the special tiles (flat, centred). ICON_JAIL with its SILVER
 # turned RED is Go To Jail.
 @ICON_GO
 .rrrr..rrrr.
