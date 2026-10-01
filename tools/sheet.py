@@ -8,14 +8,16 @@ The sheet is an indexed PNG on the game's 16-colour palette, index 16
 transparent. Paint only with the colour table's colours.
 
 Each sprite has a cell (CELL x CELL, its name above it) and stands on the
-middle of its cell's bottom edge. Redraw it anywhere inside the cell, at any
-size that fits: the import trims it to what you painted. A sprite that
-changed is written to tools/art/<name>.png, which from then on replaces the
-letters in tools/art/sprites.txt.
+middle of its cell's bottom edge; a wide one (the logo) has a row to itself
+under the grid. Redraw it anywhere inside the cell, at any size that fits:
+the import trims it to what you painted. A sprite that changed is written to
+tools/art/<name>.png, which from then on replaces the letters in
+tools/art/sprites.txt.
 
 What the game expects of each:
-  TOKEN_*   stand on their bottom row, centred. Drawn at the board's resting
-            size; the camera doubles them when it whips in.
+  TOKEN_*   the four fruit, one per seat. They stand on their bottom row,
+            centred. Drawn at the board's resting size; the camera doubles
+            them when it whips in.
   HOUSE,    stand on a street's colour band, up to four houses side by side
   HOTEL     (they overlap at the resting size).
   CARD_DECK the two card stacks on the felt. GOLD is the back's colour: the
@@ -24,8 +26,11 @@ What the game expects of each:
             Keep it 13 x 13.
   ICON_*    flat decals on the special tiles, centred (twice the size on the
             corners). ICON_JAIL in red is Go To Jail.
-  HAND      the glove; GOLD and WOOD (the cuff) take each player's colour.
-            The fingertip is the middle of the bottom row.
+  HAND      the glove; a CPU's has GOLD and WOOD (the cuff) turned RED and
+            WINE. The fingertip is the middle of the bottom row.
+  LOGO      the title's lettering, in any one colour (only its shape is
+            kept): the game adds the gold-to-wood fill, outline and shadow,
+            and prints it on the board's plaque. Up to 120 x 16.
 
 Palette: the swatch lists the 16 colours. FX_A and FX_B are animated in the
 game (placeholders here; FX_B cannot be used in sprites at all - it is the
@@ -90,8 +95,24 @@ def text(px, x, y, s, c):
         x += 4
 
 
-def cell_xy(k):
-    return X0 + (k % COLS) * (CELL + 2), Y0 + (k // COLS) * (CELL + LABEL + 2) + LABEL
+def layout(sprites):
+    """-> {name: (x, y, w, h)} cells, and the sheet's (width, height, swatch x).
+    Sprites that fit a cell fill the grid; wider ones follow, a row each."""
+    cells, k = {}, 0
+    wide = []
+    for name, img in sprites.items():
+        if len(img[0]) > CELL:
+            wide.append(name)
+            continue
+        cells[name] = (X0 + (k % COLS) * (CELL + 2), Y0 + (k // COLS) * (CELL + LABEL + 2) + LABEL, CELL, CELL)
+        k += 1
+    y = Y0 + ((k + COLS - 1) // COLS) * (CELL + LABEL + 2)
+    grid_w = COLS * (CELL + 2) - 2
+    for name in wide:
+        cells[name] = (X0, y + LABEL, grid_w, CELL)
+        y += CELL + LABEL + 2
+    sw_x = X0 + grid_w + 6
+    return cells, (sw_x + 48, max(y + 2, Y0 + 16 * SW_STEP + 2), sw_x)
 
 
 def short(name):
@@ -100,15 +121,9 @@ def short(name):
     return special.get(name, name.replace("TOKEN_", "").replace("ICON_", "I.")[:5])
 
 
-def size(n):
-    rows = (n + COLS - 1) // COLS
-    sw_x = X0 + COLS * (CELL + 2) + 4
-    return sw_x + 48, max(Y0 + rows * (CELL + LABEL + 2) + 2, Y0 + 16 * SW_STEP + 2), sw_x
-
-
 def export(path):
     sprites = load_sprites()
-    w, h, sw_x = size(len(sprites))
+    cells, (w, h, sw_x) = layout(sprites)
     im = Image.new("P", (w, h), TRANSPARENT)
     pal = []
     for i in range(16):
@@ -116,19 +131,19 @@ def export(path):
     pal += [128, 128, 128]                   # 16: transparent
     im.putpalette(pal + [0] * (768 - len(pal)))
     px = im.load()
-    for k, (name, img) in enumerate(sprites.items()):
+    for name, img in sprites.items():
         sw, sh = len(img[0]), len(img)
-        if sw > CELL or sh > CELL:
-            raise SystemExit(f"{name}: {sw}x{sh} does not fit a {CELL}x{CELL} cell")
-        x, y = cell_xy(k)
+        x, y, cw, ch = cells[name]
+        if sw > cw or sh > ch:
+            raise SystemExit(f"{name}: {sw}x{sh} does not fit its {cw}x{ch} cell")
         text(px, x, y - LABEL + 1, short(name), 0)
         # The cell's floor: a line under it, so the bottom edge is plain to see.
-        for i in range(CELL):
-            px[x + i, y + CELL] = 5
+        for i in range(cw):
+            px[x + i, y + ch] = 5
         for j, row in enumerate(img):
             for i, c in enumerate(row):
                 if c != TRANSPARENT:
-                    px[x + (CELL - sw) // 2 + i, y + CELL - sh + j] = c
+                    px[x + (cw - sw) // 2 + i, y + ch - sh + j] = c
     for i in range(16):
         y = Y0 + i * SW_STEP
         for dy in range(6):
@@ -182,20 +197,20 @@ def crop(img):
 def import_(path):
     sprites = load_sprites()
     pix = read_indices(path)
-    w, h, _ = size(len(sprites))
+    cells, (w, h, _) = layout(sprites)
     if len(pix) < h or len(pix[0]) < w:
         raise SystemExit(f"{path}: expected at least {w}x{h} (the exported layout)")
     changed = 0
-    for k, (name, old) in enumerate(sprites.items()):
-        x, y = cell_xy(k)
-        img = crop([row[x:x + CELL] for row in pix[y:y + CELL]])
+    for name, old in sprites.items():
+        x, y, cw, ch = cells[name]
+        img = crop([row[x:x + cw] for row in pix[y:y + ch]])
         if img is None:
             raise SystemExit(f"{name}: its cell is empty")
         if any(15 in row for row in img):
             raise SystemExit(f"{name}: uses FX_B, which sprites cannot (it is their transparent colour)")
         if name == "DIE" and (len(img), len(img[0])) != (13, 13):
             raise SystemExit("DIE must stay 13 x 13 (the game draws the pips on it)")
-        if img != old:
+        if img != crop(old):                     # (margins in the letters do not count)
             save_png(ART / f"{name.lower()}.png", img)
             print(f"art: {name} -> tools/art/{name.lower()}.png ({len(img[0])}x{len(img)})")
             changed += 1

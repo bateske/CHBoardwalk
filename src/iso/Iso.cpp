@@ -84,13 +84,14 @@ static void strip(int u, int v, uint8_t edge, int d, uint8_t c, uint8_t c2, bool
     for (int k = 0; k < th; k++) {
         int y = top + k;
         if ((unsigned)y >= GFX_H) continue;
-        int w = halfWidth(k, th), a = cx - w, b = cx + w, rule = 0;
+        int w = halfWidth(k, th), a = cx - w, b = cx + w;
         if (d) {
             int up = 2 * k + 1, dn = 2 * (th - 1 - k) + 1;  // how far the upper and the lower edges reach on this row
             int e = (edge == 0 || edge == 3 ? up : dn) - d;
-            if (edge < 2) { if (cx + e > a) { a = cx + e; rule = a - 2; } }
-            else          { if (cx - e < b) { b = cx - e; rule = b; } }
-            if (ruled && rule) gfx_hline(rule, y, 2, INK);
+            int rule = edge < 2 ? cx + e - 2 : cx - e;      // just inside the strip's inner edge...
+            if (edge < 2) { if (cx + e > a) a = cx + e; }
+            else          { if (cx - e < b) b = cx - e; }
+            if (ruled && rule >= cx - w && rule + 2 <= cx + w) gfx_hline(rule, y, 2, INK);     // ... and inside this cell
             if (a >= b) continue;
         }
         if (c2 != 0xFF) gfx_hline(a, y, b - a, c);
@@ -177,24 +178,25 @@ void drawTable() {
     }
 }
 
-// The name across the felt, on a plaque: its letters lie on the board's
-// long diagonal, so on screen they are level, and squat.
+// The name across the felt, on a plaque: the title's lettering (LOGO, a
+// bit a pixel), a filled run at a time. It lies along the board's long
+// diagonal, so on screen it is level.
 static void wordmark() {
-    static const char NAME[] = "BOARDWALK";
     int cx = toScreenX(0), cy = toScreenY(N * hh());
-    int pw = zoomed(117), ph = zoomed(18);
+    int pw = zoomed(LOGO_W + 10), ph = zoomed(LOGO_H + 6);
     if (cy + ph < 10 || cy - ph >= GFX_H) return;
     fillRound(cx - pw / 2, cy - ph / 2, pw, ph, 2, NAVY);
     roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 2, GOLD);
-    int x0 = cx - zoomed(105) / 2, y0 = cy - zoomed(10) / 2;
-    for (int k = 0; NAME[k]; k++) {
-        const uint8_t *g = FONT35[glyph35(NAME[k])];
-        for (int i = 0; i < 15; i++) {
-            int col = i / 5, row = i % 5;
-            if (!(g[col] >> row & 1)) continue;
-            int a = zoomed((k * 4 + col) * 3), ya = zoomed(row * 2);
-            // The top row shimmers with the palette.
-            gfx_fillRect(x0 + a, y0 + ya, zoomed((k * 4 + col + 1) * 3) - a, zoomed(row * 2 + 2) - ya, row ? GOLD : FX_B);
+    int x0 = cx - zoomed(LOGO_W) / 2, y0 = cy - zoomed(LOGO_H) / 2;
+    const uint8_t *row = LOGO;
+    for (int j = 0; j < LOGO_H; j++, row += (LOGO_W + 7) / 8) {
+        int y = y0 + zoomed(j), h = zoomed(j + 1) - zoomed(j);
+        if (y + h <= 10 || y >= GFX_H) continue;
+        for (int i = 0; i < LOGO_W; i++) {
+            int a = i;
+            while (i < LOGO_W && (row[i >> 3] & (0x80 >> (i & 7)))) i++;
+            // The top rows shimmer with the palette.
+            if (i > a) gfx_fillRect(x0 + zoomed(a), y, zoomed(i) - zoomed(a), h, j < 2 ? FX_B : GOLD);
         }
     }
 }

@@ -9,7 +9,7 @@
 # Drawn at the board's resting size (20 x 10 tiles); the camera doubles them
 # when it whips in.
 
-# --- The four tokens, one per seat. They stand on their bottom row.
+# --- The four tokens, a fruit for each seat. They stand on their bottom row.
 @TOKEN_CHERRIES
 .....ggg...
 .....gg....
@@ -23,38 +23,43 @@ krrrrkrrrrk
 .krrk.krrk.
 ..kk...kk..
 
-@TOKEN_HORSESHOE
-kkkk...kkkk
-kcuk...kcuk
-kcuk...kcuk
-kcuk...kcuk
-kcuk...kcuk
-kcuuk.kuuuk
-.kcuukuuuk.
-.kcuuuuuuk.
-..kcuuuuk..
-...kkkkkk..
+@TOKEN_BANANA
+.......kk.
+......kbbk
+......kyyk
+.....kyyyk
+.....kyyyk
+....kyywyk
+...kyywyk.
+.kkyyyyk..
+kyyyyykk..
+kbyykk....
+.kkk......
 
-@TOKEN_CROWN
-.k...k...k.
-kyk.kyk.kyk
-kyykyyykyyk
-kyyyyyyyyyk
-kywyyryyywk
-kyyyyyyyyyk
-kbbbbbbbbbk
-.kkkkkkkkk.
+@TOKEN_APPLE
+.....kb....
+....kbkgk..
+..kkkbkkk..
+.kggkkgggk.
+kgwggggggfk
+kgwgggggffk
+kggggggfffk
+kgggggffffk
+.kggggfffk.
+..kgfkffk..
+...kk.kk...
 
-@TOKEN_DIE
-....kkk....
-..kkgggkk..
-kkgggwgggkk
-kgkkgggkkfk
-kgggkkkfffk
-kgwggkffwfk
-kggggkffffk
-kkgwgkfwfkk
-..kkgkfkk..
+@TOKEN_STRAWBERRY
+...kgkgk...
+..kgggggk..
+.kkrgggrkk.
+krrrrgrrrrk
+krprrrrrprk
+krrrrprrrrk
+.krrprrrrk.
+.krrrrrprk.
+..krrprrk..
+...krrrk...
 ....kkk....
 
 # --- Buildings.
@@ -194,6 +199,24 @@ kkkkkkkkkkkkk
 krrrrrrrrrrrrk
 kkkkrrrrrrkkkk
 .kkk......kkk.
+
+# --- The title's own lettering (one colour: it is stored a bit a pixel, and
+# the game gives it its gold, its outline and its shadow).
+@LOGO
+yyyyyyyyyy.......................................yyyyy.............................yyyy...yyyy.......
+yyyyyyyyyyy......................................yyyyy.............................yyyy...yyyy.......
+.yyy....yyyy.......................................yyy..............................yyy....yyy.......
+.yyy.....yyy.......................................yyy..............................yyy....yyy.......
+.yyy.....yyy.......................................yyy..............................yyy....yyy.......
+.yyy....yyy....yyyyyy.....yyyyy....yyyy..yyy...yyyyyyy...yyyy.yyyy.yyyy...yyyyy.....yyy....yyy..yyyyy
+.yyyyyyyyy....yyyyyyyy...yyyyyyy...yyyyyyyyy..yyyyyyyy...yyyy.yyyy.yyyy..yyyyyyy....yyy....yyy..yyyyy
+.yyyyyyyyyy..yyyy..yyyy..yy..yyyy...yyyyy.yy.yyyy..yyy....yy...yy...yy...yy..yyyy...yyy....yyy.yyy...
+.yyy....yyyy.yyy....yyy......yyy....yyy......yyy...yyy....yyy..yy..yyy.......yyy....yyy....yyyyyy....
+.yyy.....yyy.yyy....yyy...yyyyyy....yyy......yyy...yyy.....yy.yyyy.yy.....yyyyyy....yyy....yyyyyyy...
+.yyy.....yyy.yyy....yyy..yyy.yyy....yyy......yyy...yyy.....yy.yyyy.yy....yyy.yyy....yyy....yyy.yyy...
+.yyy....yyyy.yyyy..yyyy.yyy..yyy....yyy......yyyy..yyy.....yyyy..yyyy...yyy..yyy....yyy....yyy..yyy..
+yyyyyyyyyyy...yyyyyyyy..yyyyyyyyy..yyyyyy.....yyyyyyyyyy....yyy..yyy....yyyyyyyyy..yyyyyy.yyyyy.yyyyy
+yyyyyyyyyy.....yyyyyy....yyyy.yyyy.yyyyyy......yyyy.yyyy....yy....yy.....yyyy.yyyy.yyyyyy.yyyyy.yyyyy
 
 # --- The pointing glove, CHChess's (a CPU's is remapped: cuff GOLD -> RED,
 # WOOD -> WINE): thumb on the left, the index finger pointing down.

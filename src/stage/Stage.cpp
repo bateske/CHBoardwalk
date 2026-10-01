@@ -21,7 +21,8 @@ using namespace iso;
 using namespace board;
 using namespace game;
 
-const uint8_t SEAT_COLOUR[4] = {RED, BLUE, GOLD, FELT_LT};
+// Cherries, banana, apple, strawberry.
+const uint8_t SEAT_COLOUR[4] = {RED, GOLD, FELT_LT, SKIN};
 
 // ---------------------------------------------------------------------------
 // State

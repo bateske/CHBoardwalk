@@ -32,7 +32,7 @@ You need the Arduino IDE (2.x) or `arduino-cli`, and:
 3. **This repository**, in a folder named `CHBoardwalk`.
 
 Pick *Tools > Optimize > Smallest + LTO* and *Tools > USB > Upload only*
-(the game is 46.9 KB of the 50,944-byte application region that way). From
+(the game is 47.1 KB of the 50,944-byte application region that way). From
 the command line:
 
     arduino-cli compile -b CHGame:ch32v:CHGame:opt=oslto,rtlib=nano,periph=game,usb=uploadonly CHBoardwalk
@@ -107,8 +107,8 @@ flash and survive re-uploading.
   and two into the board, with its colour band on the inside edge and its
   owner's colour along the rim. Pink and orange are dithered from the
   sixteen colours the three games share. The name lies across the felt on
-  the board's long diagonal - level on screen - between the two decks, and
-  stacks of chips stand about on the carpet.
+  the board's long diagonal - level on screen - between the two decks, in
+  the title's own lettering, and stacks of chips stand about on the carpet.
 * **Sprites** are span-encoded and drawn through a palette remap and a
   scale: the same art at the resting size and doubled when the camera
   whips in; CHChess's pointing glove, gold-cuffed for you and red for a
