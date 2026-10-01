@@ -183,19 +183,19 @@ void drawTable() {
 // diagonal, so on screen it is level.
 static void wordmark() {
     int cx = toScreenX(0), cy = toScreenY(N * hh());
-    int pw = zoomed(LOGO_W + 10), ph = zoomed(LOGO_H + 6);
+    int pw = sized(LOGO_W + 10), ph = sized(LOGO_H + 6);
     if (cy + ph < 10 || cy - ph >= GFX_H) return;
     fillRound(cx - pw / 2, cy - ph / 2, pw, ph, 2, NAVY);
     roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 2, GOLD);
-    int x0 = cx - zoomed(LOGO_W) / 2, y0 = cy - zoomed(LOGO_H) / 2;
+    int x0 = cx - sized(LOGO_W) / 2, y0 = cy - sized(LOGO_H) / 2, h = sized(1);
     const uint8_t *row = LOGO;
     for (int j = 0; j < LOGO_H; j++, row += (LOGO_W + 7) / 8) {
-        int y = y0 + zoomed(j), h = zoomed(j + 1) - zoomed(j);
+        int y = y0 + j * h;
         if (y + h <= 10 || y >= GFX_H) continue;
         for (int i = 0; i < LOGO_W; i++) {
             int a = i;
             while (i < LOGO_W && (row[i >> 3] & (0x80 >> (i & 7)))) i++;
-            if (i > a) gfx_fillRect(x0 + zoomed(a), y, zoomed(i) - zoomed(a), h, GOLD);
+            if (i > a) gfx_fillRect(x0 + a * h, y, (i - a) * h, h, GOLD);
         }
     }
 }
@@ -258,7 +258,7 @@ void drawBoard() {
     for (int d = 0; d < 2; d++) {
         int x = (d ? 2 : -2) * hw(), y = (d ? N + 5 : N - 5) * hh();
         centred(CARD_DECK, x, y, d ? RM_CHEST : RM_ID, zscale());
-        centred(d ? ICON_CHEST : ICON_CHANCE, x, y - zoomed(9), RM_ID, zscale());
+        centred(d ? ICON_CHEST : ICON_CHANCE, x, y - sized(9), RM_ID, zscale());
     }
 
     for (uint8_t t = 0; t < TILES; t++) {

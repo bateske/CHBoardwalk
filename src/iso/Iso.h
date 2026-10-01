@@ -21,13 +21,15 @@ constexpr int N = 13, R = 2;                // cells along a side; the ring's de
 
 // Current zoom: tileH is half a cell's height, 5 (20x10 cells, the art's own
 // size) up to 10 (40x20, the art doubled) - the camera zooms through the
-// steps between.
+// steps between. The board is drawn at every step; the art only ever as
+// drawn or doubled (it changes over halfway), never stretched in between.
 extern uint8_t tileH;
 inline int hw() { return 2 * tileH; }       // half a cell's width
 inline int hh() { return tileH; }           // half a cell's height
 inline int slab() { return (3 * tileH + 2) / 5; }   // board thickness
-inline int zscale() { return tileH * 256 / 5; }     // art scale, Q8 (256 = 1:1)
-inline int zoomed(int px) { return (px * zscale()) >> 8; }
+inline int zoomed(int px) { return px * tileH / 5; }        // a length on the board
+inline int zscale() { return tileH < 8 ? 256 : 512; }       // art scale, Q8 (256 = 1:1)
+inline int sized(int px) { return tileH < 8 ? px : 2 * px; }    // a length on a sprite
 
 // Camera: the world point shown at (CX, CY).
 struct Cam { int x, y; };

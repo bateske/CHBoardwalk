@@ -491,6 +491,7 @@ static void drawManage() {
     fmtMoney(fmtStr(buf, "DN SELL "), board::houseCost(mTile) / 2);
     text35(x + 5, 44, buf, canSell(mTile) ? WHITE : SILVER);
     text35(x + 5, 52, "A AUCTION IT", canOffer(mTile) ? WHITE : SILVER);
+    gfx_fillRect(46, 117, 36, 9, NAVY);          // (clear of anything standing on the carpet there)
     centred35(119, "B: BACK", WHITE);
 }
 

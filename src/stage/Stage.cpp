@@ -595,7 +595,7 @@ void update() {
     } else {
         uint8_t t = sPos[turn] == NOBODY ? st.pl[turn].pos : sPos[turn];
         slot(t, turn, x, y);
-        y -= zoomed(TOKEN[turn][1] + 1);
+        y -= sized(TOKEN[turn][1] + 1);
     }
     gx16 += ((x << 4) - gx16) >> 1;
     gy16 += ((y << 4) - gy16) >> 1;
@@ -608,7 +608,7 @@ static void drawToken(uint8_t seat, int x, int y, int lift, bool jailed) {
     const uint8_t *a = TOKEN[seat];
     int s = zscale(), sx = toScreenX(x), sy = toScreenY(y);
     if (sx < -24 || sx > 152 || sy < -8 || sy > 170) return;
-    gfx_fillEllipse(sx, sy, zoomed(4), (tileH + 2) / 5, INK);   // its shadow stays on the board
+    gfx_fillEllipse(sx, sy, sized(4), sized(1), INK);            // its shadow stays on the board
     if (seat == topSeat) {
         // Bankrupt: it topples, bouncing as it lands, and stays down.
         int e = fx::ease(fx::OUT_BOUNCE, topT, 30);
@@ -618,15 +618,15 @@ static void drawToken(uint8_t seat, int x, int y, int lift, bool jailed) {
     sprite4(a, sx - ((a[0] * s) >> 9), sy - ((a[1] * s) >> 8) - lift, RM_ID, s);
     if (jailed)
         for (int i = -1; i <= 1; i++)
-            gfx_fillRect(sx + i * zoomed(4) - (tileH > 7), sy - zoomed(12), 1 + (tileH > 7), zoomed(12), INK);
+            gfx_fillRect(sx + i * sized(4) - sized(1) / 2, sy - sized(12), sized(1), sized(12), INK);
 }
 
 static void drawBuilding(uint8_t t, const uint8_t *a, int along, bool growing) {
     int x, y, s = zscale();
-    if (growing) s = (s * fx::ease(fx::OUT_BACK, growT, 10)) >> 8;
-    if (s < 64) return;
     place(t, along, 2, x, y);
-    sprite4(a, toScreenX(x) - ((a[0] * s) >> 9), toScreenY(y) + zoomed(1) - ((a[1] * s) >> 8), RM_ID, s);
+    // A new one drops in and bounces.
+    if (growing) y -= sized(((256 - fx::ease(fx::OUT_BOUNCE, growT, 10)) * 10) >> 8);
+    sprite4(a, toScreenX(x) - ((a[0] * s) >> 9), toScreenY(y) + sized(1) - ((a[1] * s) >> 8), RM_ID, s);
 }
 
 // What stands on a tile, back to front: on the near sides the houses are
@@ -681,7 +681,7 @@ static void drawGlove(uint32_t frame) {
     int x = toScreenX((int)(gx16 >> 4)), y = toScreenY((int)(gy16 >> 4));
     int bob = (fx::isin((int)(frame >> 3) * 40) * 2) >> 8;
     if (tapT) bob = (tapT < 6 ? tapT : 12 - tapT) / 2;
-    sprite4(HAND, x - zoomed(HAND_TIP), y - zoomed(HAND[1]) + zoomed(bob) - 1, humanTurn ? RM_ID : RM_CPU, zscale());
+    sprite4(HAND, x - sized(HAND_TIP), y - sized(HAND[1]) + sized(bob) - 1, humanTurn ? RM_ID : RM_CPU, zscale());
 }
 
 // ---------------------------------------------------------------------------
