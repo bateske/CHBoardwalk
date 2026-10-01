@@ -11,18 +11,26 @@ between the players' counters, and auctions against the clock where you tap
 to outbid the table. It is the classic game played arcade style: made for
 one player against the CPU, or two on one handheld, and over in minutes.
 
-![a turn](docs/turn.gif)
+![gameplay](docs/gameplay.gif)
 
-| The auction | Building | Go to jail |
+*Two turns each against the CPU: a buy that makes most of a set, the CPU
+paying rent on a railroad, BUILD up the set, a tap-to-outbid auction won at
+$190 (another set), the CPU landing on the houses, and the map.*
+
+| A turn | The auction | Building |
 |---|---|---|
-| ![auction](docs/auction.gif) | ![build](docs/build.gif) | ![jail](docs/jail.gif) |
+| ![a turn](docs/turn.gif) | ![auction](docs/auction.gif) | ![build](docs/build.gif) |
+| **Go to jail** | **Title** | **The story of the game** |
+| ![jail](docs/jail.gif) | ![title](docs/title.gif) | ![result](docs/story.png) |
 | **A set made** | **Payday** | **Bankrupt** |
 | ![set](docs/setcall.gif) | ![payday](docs/payday.gif) | ![bankrupt](docs/bankrupt.gif) |
-| **Title** | **The story of the game** | |
-| ![title](docs/title.gif) | ![result](docs/story.png) | |
 
 (Captured from the PC simulator in `tools/chsim`, which runs the real game
 and graphics code and renders what the device shows.)
+
+**Status:** complete and played through in the simulator (rules tested over
+thousands of games). Frame timing and the sound on the handheld itself are
+still to be checked.
 
 ## Installing
 
@@ -34,7 +42,7 @@ You need the Arduino IDE (2.x) or `arduino-cli`, and:
 3. **This repository**, in a folder named `CHBoardwalk`.
 
 Pick *Tools > Optimize > Smallest + LTO* and *Tools > USB > Upload only*
-(the game is 47.1 KB of the 50,944-byte application region that way). From
+(the game is 49.9 KB of the 50,944-byte application region that way). From
 the command line:
 
     arduino-cli compile -b CHGame:ch32v:CHGame:opt=oslto,rtlib=nano,periph=game,usb=uploadonly CHBoardwalk
@@ -53,7 +61,7 @@ A CPU's turn goes by quickly: the show is for your own.
 |---|---|
 | LEFT / RIGHT, A | choose a button on the bar at the foot of the screen: ROLL, MANAGE (BUILD when there is a house to be had), BUY, AUCTION, and in jail PAY $50 or CARD |
 | SELECT | the map: the whole board from above, who owns what, everyone's cash and net worth |
-| START | pause: resume, options, save + quit; it shows the round, and closing time |
+| START | pause: resume, options, save + quit; it shows the round and closing time |
 | A | answers a card or a PRESS A |
 
 **The rules** are the ones you know, in the short game's shape:
@@ -61,8 +69,7 @@ A CPU's turn goes by quickly: the show is for your own.
 * Everyone starts with $1500 and a few deeds, dealt free: four each with
   two players, two each with more.
 * Roll, move, collect $200 passing GO - and **payday**, $400, landing on it
-  with the dice. Doubles roll again; three running go
-  to jail. In jail, pay $50, play a card, or roll for doubles (the third
+  with the dice. Doubles roll again; three running go to jail. In jail, pay $50, play a card, or roll for doubles (the third
   miss pays and moves).
 * Land on an unowned deed and BUY it at its price, or send it to AUCTION.
   Land on someone's and pay the rent on its card; a full colour set doubles
@@ -70,8 +77,9 @@ A CPU's turn goes by quickly: the show is for your own.
 * Hold **most of a colour group** - two of its three streets, or both of a
   pair - and BUILD houses on what you hold, evenly, and a hotel after
   four. The table hears about it: CAN BUILD! when a deed gives you most of
-  a group, FULL SET! when it gives you all of it. (With no trading and only two at the table, full sets would
-  be rare; this way the houses come.)
+  a group, FULL SET! when it gives you all of it. (With no trading and
+  only two at the table, full sets would be rare; this way the houses
+  come.)
 * **There is no trading. There are auctions.** A deed the lander turns down
   starts at nothing: the first tap leads at $0 and each tap after raises
   it a step. Every bid restarts the clock - GOING ONCE, GOING TWICE - and
@@ -145,9 +153,11 @@ C++ compiler (zig, clang++ or g++ on the PATH, `pip install ziglang`, or
   `src/states/Screens.cpp`). `cal` and `perf` estimate the device's render
   time. `pop.txt` plays the big moments (a set made, BUILD, a hotel, payday,
   the jackpot, a hotel's rent), `info.txt` the round, THEY PAY and the
-  landing plate, and `story.txt` an all-CPU game to its result graph.
+  landing plate, `story.txt` an all-CPU game to its result graph, and
+  `gameplay.txt` the clip at the top.
 * `python tools/device.py upload [--debug]` - build and upload (`--debug`
-  adds the serial protocol for screenshots, injected input and lockstep).
+  adds the serial protocol for screenshots, injected input and lockstep;
+  to fit, it leaves out the options screen and saving).
 * **Editing the art:** `python tools/sheet.py export` writes
   `tools/art/sheet.png`, an indexed PNG on the game's palette with every
   sprite in a labelled cell. Edit it (Photoshop keeps it indexed), then
