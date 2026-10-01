@@ -16,8 +16,9 @@ void fillRound(int x, int y, int w, int h, uint8_t r, uint8_t c);   // r <= 4
 void roundRect(int x, int y, int w, int h, uint8_t r, uint8_t c);
 
 // span4 art (tools/assets.py pack_span4): w, h, then per row a count and
-// (len-1)<<4|colour bytes, colour 15 = skip. Drawn through a remap and
-// scaled (Q8, 256 = 1:1).
+// (len-1)<<4|colour bytes, colour 15 = skip. Drawn through a remap (RM_ID:
+// as drawn) and scaled (Q8, 256 = 1:1).
+extern const uint8_t RM_ID[16];
 void sprite4(const uint8_t *data, int x, int y, const uint8_t *remap, int scale = 256);
 // span4 art turned by `angle` (256 = one turn) and scaled (256 = 1:1) about
 // its pixel (ax, ay), which lands on screen (px, py). Decodes into the CHGfx

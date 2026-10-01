@@ -41,6 +41,8 @@ void roundRect(int x, int y, int w, int h, uint8_t r, uint8_t c) {
     gfx_vline(x + w - 1, y + r, h - 2 * r, c);
 }
 
+const uint8_t RM_ID[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+
 // A run of one colour within a row: odd nibble, whole bytes, odd nibble.
 // pair is the colour in both nibbles.
 static inline __attribute__((always_inline)) void pairRun(uint8_t *row, int a, int len, uint8_t pair) {

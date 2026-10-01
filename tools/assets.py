@@ -1,18 +1,12 @@
-"""CHChess asset pipeline.
+"""BOARDWALK asset pipeline.
 
     python tools/assets.py         # build src/assets/*, write previews to build/assets/
 
 Sources:
-  * Pieces: tools/art/pieces/<name>.png if present (hand-finished art),
-    else tools/art/gen/<name>.png as rendered by tools/pieces.py. Each has a
-    <name>.anchor file: the base centre, in pixels from the top-left.
-    Colours are the neutral tones pieces.py documents; the game remaps them
-    per side.
-  * The palette swap that dresses the pieces as each side: tools/art/sides.txt.
-  * The pointing hand: tools/art/hand.png if present, else palette-letter
-    text in tools/art/hand.txt.
-  * tools/sheet.py exports all of it as one sprite sheet to edit, and imports
-    the edited sheet back into these files.
+  * tools/art/sprites.txt: every sprite as palette letters.
+  * tools/art/<name>.png (lower case), if present, replaces the sprite of
+    that name: palette-exact art, as tools/sheet.py import writes from an
+    edited sheet.
 
 Outputs:
   src/assets/Assets.h / Assets.cpp   - generated, do not edit
@@ -32,59 +26,19 @@ PREVIEW = ROOT / "build" / "assets"
 # Must match src/gfx/Palette.cpp.
 PALETTE = [0x000, 0xFFF, 0x042, 0x173, 0x4B5, 0xBBC, 0xE12, 0x702,
            0xFC2, 0x741, 0x26E, 0x125, 0xFB8, 0x6EF, 0xF0F, 0xFC2]
-# Letters used in tools/art/*.txt. ' ' / '.' = transparent.
+# Letters used in tools/art/sprites.txt. '.' = transparent.
 LETTER = {"k": 0, "w": 1, "d": 2, "f": 3, "g": 4, "s": 5, "r": 6, "m": 7,
           "y": 8, "b": 9, "u": 10, "n": 11, "p": 12, "c": 13, "x": 14, "z": 15}
 TRANSPARENT = 16
-PIECES = ["pawn", "knight", "bishop", "rook", "queen", "king"]
-NAMES = ["INK", "WHITE", "FELT_DK", "FELT", "FELT_LT", "SILVER", "RED", "WINE",
-         "GOLD", "WOOD", "BLUE", "NAVY", "SKIN", "CYAN", "FX_A", "FX_B"]
-SIDES = ART / "sides.txt"
-SIDES_HEADER = """# The palette swap that dresses the one set of piece art as each side.
-# The art (tools/art/pieces/, else tools/art/gen/) is drawn in its own
-# tones - the MASTER row of tools/sheet.py's sheet - with an INK outline.
-# One line per art colour the swap changes: the art colour, then White's
-# colour, then Black's (names as in src/gfx/Palette.h). Colours not listed
-# stay as drawn.
-#
-# tools/sheet.py import rewrites this from an edited sheet.
-"""
+
+# The tables the game indexes: tokens by seat, decals by board::Type order
+# (see src/stage/Stage.cpp).
+TOKENS = ["TOKEN_CHERRIES", "TOKEN_HORSESHOE", "TOKEN_CROWN", "TOKEN_DIE"]
 
 
-def load_sides():
-    """tools/art/sides.txt -> [white, black], each art colour -> side colour (16 entries)."""
-    maps = [list(range(16)), list(range(16))]
-    for ln in SIDES.read_text().splitlines():
-        words = ln.split("#", 1)[0].split()
-        if not words:
-            continue
-        a, w, b = (NAMES.index(n) for n in words)
-        maps[0][a], maps[1][a] = w, b
-    return maps
-
-
-def save_sides(maps):
-    lines = [f"{NAMES[a]:<8} {NAMES[maps[0][a]]:<8} {NAMES[maps[1][a]]}"
-             for a in range(16) if maps[0][a] != a or maps[1][a] != a]
-    SIDES.write_text(SIDES_HEADER + "\n".join(lines) + "\n", newline="\n")
-
-
-def piece_source(name):
-    """The piece's art file: hand-finished in tools/art/pieces/, else as rendered."""
-    src = ART / "pieces" / f"{name}.png"
-    return src if src.exists() else ART / "gen" / f"{name}.png"
-
-
-def load_piece(name):
-    """-> rows of palette indices, and the base centre (ax, ay)."""
-    src = piece_source(name)
-    ax, ay = (int(v) for v in src.with_suffix(".anchor").read_text().split())
-    return load_png(src), ax, ay
-
-
-def load_hand():
-    png = ART / "hand.png"
-    return load_png(png) if png.exists() else load_art("hand")[0]
+def rgb(i):
+    c = PALETTE[i]
+    return ((c >> 8) * 17, ((c >> 4) & 15) * 17, (c & 15) * 17)
 
 
 def save_png(path, img):
@@ -97,11 +51,6 @@ def save_png(path, img):
                 im.putpixel((x, y), rgb(img[y][x]) + (255,))
     path.parent.mkdir(parents=True, exist_ok=True)
     im.save(path)
-
-
-def rgb(i):
-    c = PALETTE[i]
-    return ((c >> 8) * 17, ((c >> 4) & 15) * 17, (c & 15) * 17)
 
 
 def load_png(path):
@@ -123,25 +72,29 @@ def load_png(path):
     return rows
 
 
-def load_art(name):
-    """tools/art/<name>.txt: palette letters, one row per line; '#' starts a comment line.
-    Several images may follow each other, separated by a blank line."""
-    imgs, cur = [], []
-    for ln in (ART / f"{name}.txt").read_text().splitlines():
-        if ln.startswith("#"):
+def load_sprites():
+    """tools/art/sprites.txt (and any PNGs that replace its sprites) -> {name: rows}, in file order."""
+    out, name, rows = {}, None, []
+
+    def flush():
+        if name:
+            w = max(len(r) for r in rows)
+            out[name] = [[TRANSPARENT if ch == "." else LETTER[ch] for ch in r.ljust(w, ".")] for r in rows]
+
+    for ln in (ART / "sprites.txt").read_text().splitlines():
+        ln = ln.rstrip()
+        if ln.startswith("#") or not ln:
             continue
-        if not ln.strip():
-            if cur:
-                imgs.append(cur)
-                cur = []
-            continue
-        cur.append(ln.rstrip())
-    if cur:
-        imgs.append(cur)
-    out = []
-    for rows in imgs:
-        w = max(len(r) for r in rows)
-        out.append([[TRANSPARENT if ch in " ." else LETTER[ch] for ch in r.ljust(w)] for r in rows])
+        if ln.startswith("@"):
+            flush()
+            name, rows = ln[1:].strip(), []
+        else:
+            rows.append(ln)
+    flush()
+    for name in out:
+        png = ART / f"{name.lower()}.png"
+        if png.exists():
+            out[name] = load_png(png)
     return out
 
 
@@ -166,22 +119,7 @@ def pack_span4(img, trans=TRANSPARENT):
     return out
 
 
-def pack_rows1(img):
-    """1-bit rows, MSB first (any opaque pixel = 1)."""
-    h, w = len(img), len(img[0])
-    out = []
-    for row in img:
-        for x0 in range(0, w, 8):
-            b = 0
-            for i in range(8):
-                x = x0 + i
-                if x < w and row[x] != TRANSPARENT:
-                    b |= 0x80 >> i
-            out.append(b)
-    return out
-
-
-def preview(name, img, scale=6, bg=3):
+def preview(name, img, scale=8, bg=1):
     h, w = len(img), len(img[0])
     im = Image.new("RGB", (w, h), rgb(bg))
     for y in range(h):
@@ -201,49 +139,33 @@ def c_array(name, data, per_line=16):
 
 def main():
     PREVIEW.mkdir(parents=True, exist_ok=True)
+    sprites = load_sprites()
     decls, defs = [], []
     total = 0
-
-    # Pieces.
-    table = []
-    for name in PIECES:
-        img, ax, ay = load_piece(name)
+    for name, img in sprites.items():
         data = pack_span4(img)
-        defs.append(c_array(f"PIECE_{name.upper()}", data))
-        table.append((f"PIECE_{name.upper()}", ax, ay))
+        defs.append(c_array(name, data))
+        decls.append(f"extern const uint8_t {name}[{len(data)}];")
         total += len(data)
-        preview(f"piece_{name}", img)
-    defs.append("const PieceArt PIECE_ART[6] = {\n" +
-                "".join(f"    {{{n}, {ax}, {ay}}},\n" for n, ax, ay in table) + "};")
-    decls.append("struct PieceArt { const uint8_t *data; int8_t ax, ay; };   // span4 art, base centre\n"
-                 "extern const PieceArt PIECE_ART[6];                          // pawn, knight, bishop, rook, queen, king")
-    total += 6 * 8
+        preview(name.lower(), img)
 
-    # Each side's colours for the art.
-    maps = load_sides()
-    defs.append("const uint8_t SIDE_REMAP[2][16] = {\n" +
-                "".join("    {" + ", ".join(str(v) for v in m) + "},\n" for m in maps) + "};")
-    decls.append("extern const uint8_t SIDE_REMAP[2][16];                      // art colour -> White's, Black's (tools/art/sides.txt)")
-    total += 32
+    defs.append("const uint8_t *const TOKEN[4] = {" + ", ".join(TOKENS) + "};")
+    decls.append("extern const uint8_t *const TOKEN[4];        // by seat")
+    total += 16
 
-    # The pointing hand (span4).
-    hand = load_hand()
-    data = pack_span4(hand)
-    defs.append(c_array("HAND", data))
+    hand = sprites["HAND"]
     tip = [x for x, v in enumerate(hand[-1]) if v != TRANSPARENT]
-    decls.append("extern const uint8_t HAND[];                                 // span4, fingertip on the bottom row\n"
-                 f"constexpr uint8_t HAND_TIP = {(tip[0] + tip[-1]) // 2};                           // its column")
-    total += len(data)
-    preview("hand", hand, 8)
+    decls.append(f"constexpr uint8_t HAND_TIP = {(tip[0] + tip[-1]) // 2};          // the fingertip's column (bottom row)")
 
     OUT_H.parent.mkdir(parents=True, exist_ok=True)
-    OUT_H.write_text("// Generated by tools/assets.py - do not edit.\n#pragma once\n#include <stdint.h>\n\n"
+    OUT_H.write_text("// Generated by tools/assets.py - do not edit.\n"
+                     "// Sprites in the span4 format (src/gfx/Draw.h).\n"
+                     "#pragma once\n#include <stdint.h>\n\n"
                      + "\n".join(decls) + "\n", newline="\n")
     OUT_C.write_text("// Generated by tools/assets.py - do not edit.\n"
-                     "// Piece art rendered by tools/pieces.py (and finished by hand where\n"
-                     "// tools/art/pieces/ has a file); hand-drawn cursor and icons in tools/art/.\n"
+                     "// From tools/art/sprites.txt (and any tools/art/*.png drawn over it).\n"
                      "#include \"Assets.h\"\n\n" + "\n\n".join(defs) + "\n", newline="\n")
-    print(f"assets: {total} bytes of data")
+    print(f"assets: {total} bytes of data, {len(sprites)} sprites")
 
 
 if __name__ == "__main__":
