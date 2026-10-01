@@ -331,9 +331,12 @@ static void testAuction() {
     throwDice(1, 2);
     CHECK_EQ(phase(), P_AUCTION);
     update(false);
-    CHECK(bid(0)); CHECK(bid(1)); CHECK(bid(0)); CHECK(bid(1));
+    CHECK(bid(0)); CHECK(bid(1)); CHECK(bid(0));
+    CHECK_EQ(auc.timer, AUCTION_WINDOW);
+    CHECK(bid(1));
     CHECK_EQ(auc.price, 30);                 // $60 list: steps of $10
     CHECK(!bid(0));                          // $40 is more than they have
+    CHECK_EQ(auc.timer, AUCTION_LAST);       // ... so nobody can answer: the gavel comes early
     runAuction();
     CHECK_EQ(owner(3), 1);
 }
