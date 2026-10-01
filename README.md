@@ -53,7 +53,7 @@ A CPU's turn goes by quickly: the show is for your own.
 |---|---|
 | LEFT / RIGHT, A | choose a button on the bar at the foot of the screen: ROLL, MANAGE (BUILD when there is a house to be had), BUY, AUCTION, and in jail PAY $50 or CARD |
 | SELECT | the map: the whole board from above, who owns what, everyone's cash and net worth |
-| START | pause: resume, options, save + quit |
+| START | pause: resume, options, save + quit; it shows the round, and closing time |
 | A | answers a card or a PRESS A |
 
 **The rules** are the ones you know, in the short game's shape:
@@ -95,7 +95,11 @@ A CPU's turn goes by quickly: the show is for your own.
 MANAGE: LEFT / RIGHT walk your deeds, UP builds a house, DOWN sells one back
 at half price, A auctions the deed, B goes back. BUILD opens it on a street
 you can build on, and each UP moves along the set, so UP, UP, UP builds it
-up evenly.
+up evenly. Under the card, THEY PAY is what the others pay to land there as
+it stands - it grows as you build. Landing on any owned deed, the plate at
+the foot of the screen names its owner and what it charges. With four at
+the table the top bar has no room for the round, so it floats up as each
+round begins.
 
 Options: sound, and the pace (FUN, or QUICK: faster turns, no zooming in on
 landings). Options, the house's records and a game in progress (SAVE + QUIT,
@@ -140,8 +144,8 @@ C++ compiler (zig, clang++ or g++ on the PATH, `pip install ziglang`, or
   `$`, `E` and `T` to set cash, deeds and tokens (the list is in
   `src/states/Screens.cpp`). `cal` and `perf` estimate the device's render
   time. `pop.txt` plays the big moments (a set made, BUILD, a hotel, payday,
-  the jackpot, a hotel's rent) and `story.txt` an all-CPU game to its
-  result graph.
+  the jackpot, a hotel's rent), `info.txt` the round, THEY PAY and the
+  landing plate, and `story.txt` an all-CPU game to its result graph.
 * `python tools/device.py upload [--debug]` - build and upload (`--debug`
   adds the serial protocol for screenshots, injected input and lockstep).
 * **Editing the art:** `python tools/sheet.py export` writes

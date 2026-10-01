@@ -280,6 +280,12 @@ static void onTurn(const Event &e) {
     closePopup();
     aucOn = false;
     if (!e.c) plT = 0;
+    if (!e.c && !turn && st.players == SEATS) {             // four at the table: no room for the round on the HUD
+        // (the bar hides the plate on your turn: the round floats up instead)
+        char buf[12], *p = fmtInt(fmtStr(buf, "R"), st.round);
+        if (st.roundCap) fmtInt(fmtStr(p, "/"), st.roundCap);
+        fx::floatText(buf, CX, 30, st.round == st.roundCap ? RED : GOLD);
+    }
     if (!humanTurn) { holdT = 10; return; }
     // Several humans: the handheld changes hands.
     if (humans() > 1 && lastHuman != turn) {
@@ -343,7 +349,7 @@ static void onPay(const Event &e) {
 }
 
 static void onLand(uint8_t t, int pot) {
-    char name[28], tag[8];
+    char name[28], tag[12];
     int x, y;
     focus = t;
     worldOf(t, x, y);
@@ -358,7 +364,12 @@ static void onLand(uint8_t t, int pot) {
     if (isDeed(t)) {
         uint8_t o = sDeed[t] & 7;
         if (o == BANK) fmtMoney(fmtStr(tag, " "), price(t));
-        else { tag[0] = ' '; seatTag(tag + 1, o); c = SEAT_COLOUR[o]; }
+        else {
+            // Whose, and what it charges.
+            tag[0] = ' ';
+            fmtMoney(fmtStr(seatTag(tag + 1, o), " "), rent(t, lastRoll()));
+            c = SEAT_COLOUR[o];
+        }
     }
     if (pot) fmtMoney(fmtStr(tag, " "), pot);
     say(name, WHITE, tag, c);

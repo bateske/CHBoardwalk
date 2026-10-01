@@ -519,7 +519,7 @@ static void playUpdate() {
 
 // The manage view's keys, beside the deed's card.
 static void drawManage() {
-    char buf[20];
+    char buf[32];
     const int x = 68;
     fillRound(x, 15, 58, 48, 3, NAVY);
     roundRect(x, 15, 58, 48, 3, GOLD);
@@ -530,8 +530,15 @@ static void drawManage() {
     fmtMoney(fmtStr(buf, "DN SELL "), board::houseCost(mTile) / 2);
     text35(x + 5, 44, buf, canSell(mTile) ? WHITE : SILVER);
     text35(x + 5, 52, "A AUCTION IT", canOffer(mTile) ? WHITE : SILVER);
-    gfx_fillRect(46, 117, 36, 9, NAVY);          // (clear of anything standing on the carpet there)
-    centred35(119, "B: BACK", WHITE);
+    // What the others pay to land here as it stands (a set doubles the
+    // bare rent, railroads go by how many): it grows as you build.
+    char *p = fmtStr(buf, "THEY PAY ");
+    if (board::type(mTile) == board::UTIL) fmtStr(fmtInt(p, rent(mTile, 1)), "X DICE");
+    else fmtMoney(p, rent(mTile, 0));
+    fmtStr(buf + strlen(buf), "   B: BACK");
+    int w = text35Width(buf);
+    gfx_fillRect(62 - w / 2, 117, w + 4, 9, NAVY);    // (clear of anything standing on the carpet there)
+    centred35(119, buf, WHITE);
 }
 
 // Who finished where: net worth, a bar for each growing as the count goes.
@@ -601,9 +608,12 @@ static void playRender(uint32_t frame) {
     if (managing) drawManage();
     else if (showBar) drawBar(frame);
     if (overlay == PAUSE) {
-        panel(36, 52);
+        char buf[20], *p = fmtInt(fmtStr(buf, "ROUND "), st.round);
+        if (st.roundCap) fmtInt(fmtStr(p, " OF "), st.roundCap);
+        panel(30, 62);
+        centred35(34, buf, st.round == st.roundCap ? RED : GOLD);
         for (uint8_t i = 0; i < 3; i++) {
-            int y = 42 + i * 14;
+            int y = 46 + i * 14;
             if (i == sel) fillRound(18, y - 3, 92, 15, 3, INK);
             centred2(y, PAUSE_ITEM[i], i == sel ? FX_B : WHITE);
         }
