@@ -180,22 +180,23 @@ void drawTable() {
 
 // The name across the felt, on a plaque: the title's lettering (LOGO, a
 // bit a pixel), a filled run at a time. It lies along the board's long
-// diagonal, so on screen it is level.
+// diagonal, so on screen it is level. It is painted on the board, not
+// standing on it, so it grows with the board through every step of a zoom.
 static void wordmark() {
     int cx = toScreenX(0), cy = toScreenY(N * hh());
-    int pw = sized(LOGO_W + 10), ph = sized(LOGO_H + 6);
+    int pw = zoomed(LOGO_W + 10), ph = zoomed(LOGO_H + 6);
     if (cy + ph < 10 || cy - ph >= GFX_H) return;
     fillRound(cx - pw / 2, cy - ph / 2, pw, ph, 2, NAVY);
     roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 2, GOLD);
-    int x0 = cx - sized(LOGO_W) / 2, y0 = cy - sized(LOGO_H) / 2, h = sized(1);
+    int x0 = cx - zoomed(LOGO_W) / 2, y0 = cy - zoomed(LOGO_H) / 2;
     const uint8_t *row = LOGO;
     for (int j = 0; j < LOGO_H; j++, row += (LOGO_W + 7) / 8) {
-        int y = y0 + j * h;
+        int y = y0 + zoomed(j), h = zoomed(j + 1) - zoomed(j);
         if (y + h <= 10 || y >= GFX_H) continue;
         for (int i = 0; i < LOGO_W; i++) {
             int a = i;
             while (i < LOGO_W && (row[i >> 3] & (0x80 >> (i & 7)))) i++;
-            if (i > a) gfx_fillRect(x0 + a * h, y, (i - a) * h, h, GOLD);
+            if (i > a) gfx_fillRect(x0 + zoomed(a), y, zoomed(i) - zoomed(a), h, GOLD);
         }
     }
 }
